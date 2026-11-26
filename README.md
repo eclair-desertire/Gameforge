@@ -40,7 +40,7 @@ hooks/hooks.json         SessionStart: выводит память проект�
                          Stop: напоминает дописать history.md, если файлы менялись
 scripts/                 detect-engine.sh, status.sh, history-check.sh, run-mcp.sh
 mcp-servers/             свои MCP-серверы (Python): voxel/ (gameforge-voxel), fx/ (gameforge-fx)
-.mcp.json                подключает gameforge-voxel и gameforge-fx (внешних программ не требуют)
+.claude-plugin/plugin.json  манифест + подключение gameforge-voxel и gameforge-fx (без внешних программ)
 mcp-templates/           unity, godot, unreal, blender, aseprite, gimp, blockbench, flstudio —
                          пишутся в .mcp.json проекта по необходимости
 templates/               state, context, history, ideas, concept, gdd, backlog, level, sound-list, credits,
