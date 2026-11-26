@@ -5,6 +5,13 @@ description: Справочник GameForge по Godot 4 — бинарь и hea
 
 # Godot в GameForge
 
+## Перед началом: инструменты
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task godot
+```
+Итог не «всё готово» → **сначала явно перечисли пользователю, что требуется установить или включить**, и пройди gameforge:doctor (установка только с его согласия). В сессии должны быть инструменты: `mcp__godot__*` — если работаешь через MCP; прописан, но инструментов нет — сервер не активен (doctor, шаг 5).
+
 ## Бинарь
 
 macOS: `/Applications/Godot.app/Contents/MacOS/Godot` (или `Godot_mono.app` для C#). Проверь `which godot`; если нет — используй полный путь, запиши его в CLAUDE.md проекта. Версия: `godot --version`.

@@ -5,6 +5,13 @@ description: HD 2D-арт и обработка изображений в GIMP �
 
 # 2D art (HD) — GIMP MCP + gameforge-fx
 
+## Перед началом: инструменты
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task art-2d
+```
+Итог не «всё готово» → **сначала явно перечисли пользователю, что требуется установить или включить**, и пройди gameforge:doctor (установка только с его согласия). В сессии должны быть инструменты: `mcp__gimp__*` и `mcp__plugin_gameforge_gameforge-fx__*`; прописан, но инструментов нет — сервер не активен (doctor, шаг 5).
+
 Инструменты: **`gimp`** MCP (`mcp-templates/gimp.json`, GIMP 3.2+) и **`gameforge-fx`**. Для пиксель-арта — gameforge:pixel-art; для эффектов — gameforge:vfx.
 
 ## Принцип: собирать, а не «рисовать мышью»

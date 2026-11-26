@@ -16,6 +16,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-engine.sh" "<путь к проект
 
 ## 2. Проверка инструментов (не пропускай)
 
+Быстро и целиком: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all` (или `--task …`). Всё, что `[нет]`/`[выкл]`/`[mcp]`, — явно перечисли пользователю и установи/включи через gameforge:doctor. Таблица ниже — что именно проверяется.
+
 | Движок | Проверка | Если нет |
 |--------|----------|----------|
 | Unity | `which unity && unity --version`, затем `unity doctor --format json` | Установить Unity CLI (команда в engine-unity). Сам скрипт установки не запускай без согласия пользователя. |

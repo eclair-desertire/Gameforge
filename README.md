@@ -16,6 +16,7 @@ skills/
   studio/                дирижёр: где мы, что дальше, ворота этапов, параллельные потоки
   project-memory/        память проекта: context.md, history.md, версии GDD
   setup/                 подключение проекта: движок, CLI, MCP, .gameforge/, CLAUDE.md
+  doctor/                проверка, установка (с согласия) и активация программ и MCP перед работой
   ideas/                 брейншторм по свежим трендам (Steam, мобильные чарты, соцсети, джемы)
   concept/  design/      идея → вердикт; живой GDD
   plan/  build/          backlog по всем потокам; реализация с проверкой в движке
@@ -35,10 +36,12 @@ skills/
   engine-godot/          headless, тесты, экспорт, godot-mcp / godot-ai
   engine-unreal/         Build.sh, RunUAT, автотесты, Python, Unreal MCP
 agents/                  game-designer, gameplay-programmer, qa-playtester, level-designer,
-                         3d-artist, 2d-artist, audio-designer, composer, marketing-lead, build-engineer
+                         3d-artist, 2d-artist, audio-designer, composer, marketing-lead, build-engineer,
+                         scout и runner (haiku) — дешёвые поиск и исполнение
 hooks/hooks.json         SessionStart: выводит память проекта (и после сжатия контекста)
                          Stop: напоминает дописать history.md, если файлы менялись
-scripts/                 detect-engine.sh, status.sh, history-check.sh, run-mcp.sh
+scripts/                 detect-engine.sh, status.sh, history-check.sh, run-mcp.sh,
+                         check-tools.py (что установлено/включено для задачи)
 mcp-servers/             свои MCP-серверы (Python): voxel/ (gameforge-voxel), fx/ (gameforge-fx)
 .claude-plugin/plugin.json  манифест + подключение gameforge-voxel и gameforge-fx (без внешних программ)
 mcp-templates/           unity, godot, unreal, blender, aseprite, gimp, blockbench, flstudio —
@@ -67,6 +70,22 @@ templates/               state, context, history, ideas, concept, gdd, backlog, 
 2. **CLAUDE.md проекта** импортирует `@.gameforge/context.md`.
 3. **Stop-хук** напоминает дописать history.md, если файлы проекта менялись, а журнал не обновлялся 20+ минут (не чаще раза в 45 минут; пороги — `GAMEFORGE_HISTORY_MINUTES`, `GAMEFORGE_NAG_MINUTES`).
 4. Если проект под git — `.gameforge/` коммитится вместе с кодом.
+
+## Модели и экономия токенов
+
+Каждый агент плагина закреплён за моделью по сложности работы (поле `model` в `agents/*.md`):
+
+| Модель | Агенты | Работа |
+|--------|--------|--------|
+| haiku | scout, runner | поиск, чтение логов и доков, сбор трендов; сборки, тесты, ffmpeg, пакетный экспорт по готовым командам |
+| sonnet | gameplay-programmer, qa-playtester, build-engineer, level-designer, audio-designer, marketing-lead | задачи backlog с критерием готовности |
+| opus | game-designer, 2d-artist, 3d-artist, composer | дизайн и баланс; арт и музыка с оценкой качества |
+
+Основная сессия оставляет себе разговор, решения и проверку результатов субагентов (правила — `skills/studio`, раздел 5).
+
+## Проверка инструментов
+
+Перед работой с внешней программой скиллы запускают `python3 scripts/check-tools.py --task <задача>` (или `all`) и **явно перечисляют, что нужно установить или включить**; установка и подключение MCP — через `gameforge:doctor`, только с согласия пользователя.
 
 ## MCP-серверы
 

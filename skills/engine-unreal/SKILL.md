@@ -5,6 +5,13 @@ description: Справочник GameForge по Unreal Engine 5 — пути к
 
 # Unreal в GameForge
 
+## Перед началом: инструменты
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task unreal
+```
+Итог не «всё готово» → **сначала явно перечисли пользователю, что требуется установить или включить**, и пройди gameforge:doctor (установка только с его согласия). В сессии должны быть инструменты: `mcp__unreal__*` — если работаешь через MCP; прописан, но инструментов нет — сервер не активен (doctor, шаг 5).
+
 ## Пути (macOS)
 
 - Движок из Epic Launcher: `/Users/Shared/Epic Games/UE_<5.x>/`

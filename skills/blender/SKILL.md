@@ -5,6 +5,13 @@ description: 3D-арт для игры через Blender MCP (mcp-for-blender �
 
 # Blender — сложные игровые ассеты
 
+## Перед началом: инструменты
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task blender
+```
+Итог не «всё готово» → **сначала явно перечисли пользователю, что требуется установить или включить**, и пройди gameforge:doctor (установка только с его согласия). В сессии должны быть инструменты: `mcp__blender__*`; прописан, но инструментов нет — сервер не активен (doctor, шаг 5).
+
 ## 0. Подключение
 
 **Основной путь — `mcp-for-blender`** (бывш. `blender-mcp`, MIT, сторонний проект). Шаблон — `${CLAUDE_PLUGIN_ROOT}/mcp-templates/blender.json`, или быстро: `claude mcp add blender uvx mcp-for-blender`.

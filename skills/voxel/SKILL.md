@@ -5,6 +5,13 @@ description: Детализированная воксельная график�
 
 # Voxel — детально, а не «кубики»
 
+## Перед началом: инструменты
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task voxel
+```
+Итог не «всё готово» → **сначала явно перечисли пользователю, что требуется установить или включить**, и пройди gameforge:doctor (установка только с его согласия). В сессии должны быть инструменты: `mcp__plugin_gameforge_gameforge-voxel__*` (для low-poly ещё `--task lowpoly` и `mcp__blockbench__*`); прописан, но инструментов нет — сервер не активен (doctor, шаг 5).
+
 Инструменты: **`gameforge-voxel`** (встроен, запускается сам) — моделирование, генераторы, запечённое AO, рендер-превью, .vox/.glb/.obj. Готовые модели открываются в MagicaVoxel и Goxel (.vox), в Blender — через .glb. **Blockbench MCP** (`mcp-templates/blockbench.json`) — для low-poly/блочных моделей с UV-текстурами и анимацией.
 
 ## Масштаб — решить в начале (запиши в `.gameforge/art/style.md`)

@@ -5,6 +5,13 @@ description: Музыка для игры в FL Studio через FL Studio MCP 
 
 # Music — саундтрек в FL Studio
 
+## Перед началом: инструменты
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task music
+```
+Итог не «всё готово» → **сначала явно перечисли пользователю, что требуется установить или включить**, и пройди gameforge:doctor (установка только с его согласия). В сессии должны быть инструменты: `mcp__flstudio__*`; прописан, но инструментов нет — сервер не активен (doctor, шаг 5).
+
 Инструмент: **`flstudio`** MCP (`mcp-templates/flstudio.json`; rosasynthesiz/flstudio-mcp — mixer, plugins, piano roll, step sequencer, patterns, playlist, анализ микса, MIDI-экспорт). Альтернативы: karl-andres/fl-studio-mcp; для Ableton — ahujasid/ableton-mcp. Без DAW — MIDI-файлы + gameforge:audio.
 
 **Ограничения FL API (честно говорим пользователю):** загрузить плагин/сэмпл и отрендерить аудио агент не может — это делает пользователь (File → Export). Ноты в piano roll: один раз за сессию пользователь запускает скрипт `MCP_Apply` в piano roll. Остальное (ноты, паттерны, микшер, параметры плагинов, плейлист) — агент.
