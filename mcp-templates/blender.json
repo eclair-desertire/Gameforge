@@ -1,9 +1,19 @@
 {
-  "_comment": "mcp-for-blender (бывш. blender-mcp, MIT, не от Blender Foundation). Нужно: uv, Blender 3.0+, аддон (`uvx mcp-for-blender install-addon` → Preferences → Add-ons → «Interface: MCP for Blender» → N-панель → Start MCP Server). Порт 9876. Ключи генераторов (Rodin, Hunyuan3D, Tripo, Meshy, Sketchfab) пользователь добавляет в env сам. Сокет аддона без аутентификации — не включать Allow Remote Connections. Альтернатива — официальный Blender Lab MCP (Blender 5.1+), см. skills/blender/SKILL.md.",
+  "_comment": "Ровно один из двух серверов — под установленный аддон (протоколы разные, оба на :9876). blender — официальный Blender Lab MCP (Blender 5.1+, расширение MCP с https://lab.blender.org/, GPL-3.0): сервер ставится из git Blender Lab; пакет blender-mcp на PyPI — это НЕ он. blender-community — mcp-for-blender (MIT): `uvx mcp-for-blender install-addon`, ключи генераторов (Rodin, Hunyuan3D, Tripo, Meshy, Sketchfab) пользователь добавляет в env сам. Сокет без аутентификации — только localhost.",
   "mcpServers": {
     "blender": {
       "command": "uvx",
-      "args": ["mcp-for-blender"],
+      "args": [
+        "--from",
+        "git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp",
+        "blender-mcp"
+      ]
+    },
+    "blender-community": {
+      "command": "uvx",
+      "args": [
+        "mcp-for-blender"
+      ],
       "env": {
         "BLENDER_HOST": "localhost",
         "BLENDER_PORT": "9876",

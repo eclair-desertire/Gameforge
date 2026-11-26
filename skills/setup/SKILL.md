@@ -59,7 +59,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-engine.sh" "<путь к проект
 
 ```
 .gameforge/
-  state.md        ← templates/state.md (заполни title/engine/engine_version/track/platforms/date)
+  state.md        ← templates/state.md (заполни title/engine/engine_version/track/platforms/date; `tools:` — инструменты проекта из шага 2 через пробел, их проверяет хук при каждом старте сессии; `review: lean`)
   context.md      ← templates/context.md — паспорт проекта (заполни всё, что уже известно)
   history.md      ← templates/history.md — журнал, первая запись «Проект подключён»
   archive/        ← снимки GDD и старые части истории
@@ -72,6 +72,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-engine.sh" "<путь к проект
   levels/         ← документы уровней (templates/level.md)
   audio/          ← sound-list.md (templates/sound-list.md)
   playtests/      ← сюда templates/playtest.md как NNN.md
+  art/style.md    ← арт-библия (art-director, ворота AD-STYLE)
+  qa/  ux/  narrative/  balance/  decisions/   ← рабочие папки ролей команды (gameforge:team, §6)
   decisions/      ← ADR по templates/adr.md
   releases/
 ```

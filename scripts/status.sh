@@ -25,6 +25,21 @@ if [ -f "$state" ]; then
   [ -n "$next" ] && echo "Следующий шаг: $next"
 fi
 
+# инструменты проекта (поле tools: в state.md) — показываем только проблемы
+tools="$(field tools)"
+if [ -n "$tools" ] && command -v python3 >/dev/null 2>&1; then
+  plugin_root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+  # shellcheck disable=SC2086
+  problems="$(CLAUDE_PROJECT_DIR="$root" python3 "$plugin_root/scripts/check-tools.py" --brief $tools 2>/dev/null)"
+  if [ -n "$problems" ]; then
+    echo
+    echo "$problems"
+  else
+    echo "Инструменты проекта ($tools): готовы."
+  fi
+  echo "Плагин GameForge: $plugin_root (для брифов агентам)"
+fi
+
 if [ -f "$context" ]; then
   echo
   echo "--- context.md ---"

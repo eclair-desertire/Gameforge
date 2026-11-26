@@ -12,20 +12,32 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task blender
 ```
 Итог не «всё готово» → **сначала явно перечисли пользователю, что требуется установить или включить**, и пройди gameforge:doctor (установка только с его согласия). В сессии должны быть инструменты: `mcp__blender__*`; прописан, но инструментов нет — сервер не активен (doctor, шаг 5).
 
-## 0. Подключение
+## 0. Подключение — два варианта, ровно один активен
 
-**Основной путь — `mcp-for-blender`** (бывш. `blender-mcp`, MIT, сторонний проект). Шаблон — `${CLAUDE_PLUGIN_ROOT}/mcp-templates/blender.json`, или быстро: `claude mcp add blender uvx mcp-for-blender`.
+Оба сервера используют порт 9876, но протоколы у них **разные**: сервер работает только со «своим» аддоном. `check-tools.py --task blender` определяет, какой аддон стоит, и проверяет, что прописан подходящий сервер.
 
-1. Нужны `uv` (`which uvx`) и Blender 3.0+ (лучше 4.2+ — там extensions и MPFB2). Путь на macOS: `/Applications/Blender.app/Contents/MacOS/Blender`.
-2. Аддон: `uvx mcp-for-blender install-addon` → Blender → Edit → Preferences → Add-ons → включить **Interface: MCP for Blender** → в 3D-виде `N` → вкладка **MCP for Blender** → **Start MCP Server**. Это делает пользователь (GUI).
-3. Проверка: `/mcp` показывает `blender` connected; вызов `get_scene_info` отвечает. Если Blender закрыт или сервер не запущен — сервер MCP стартует, но каждый вызов падает.
-4. Только один экземпляр сервера на все клиенты. Порт 9876 (`BLENDER_PORT`).
+| | **Официальный Blender Lab MCP** (предпочтительно, если стоит) | **mcp-for-blender** (community, MIT) |
+|--|--|--|
+| Blender | 5.1+ | 3.0+ |
+| Аддон | расширение `MCP` из репозитория `https://lab.blender.org/` (Preferences → Get Extensions → Repositories) | `uvx mcp-for-blender install-addon` → включить «Interface: MCP for Blender» |
+| Сервер MCP | `uvx --from "git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp" blender-mcp` (⚠ пакет `blender-mcp` на PyPI — это другой, community-проект) | `uvx mcp-for-blender` |
+| Запуск в Blender | Preferences → Add-ons → MCP → Start (или галка Auto-start) | N-панель → MCP for Blender → Start MCP Server |
+| Шаблон | `mcp-templates/blender.json` → `blender` | `mcp-templates/blender.json` → `blender-community` |
 
-**Инструменты:** `execute_blender_code` (Python в живом Blender), `look` (скриншот вьюпорта/камеры/рендера: solid, material, rendered, wireframe, xray), `get_scene_info`, `search_assets` / `import_asset` (Poly Haven — CC0 без ключа; Sketchfab, Poly Pizza — ключ и разные лицензии), `generate_3d` (Hyper3D Rodin, Hunyuan3D, Tripo, Meshy — ключи/платный тариф пользователя).
+**Инструменты по задачам:**
 
-**Безопасность:** `execute_blender_code` выполняет любой Python — **перед серией правок сохраняй .blend** (`bpy.ops.wm.save_as_mainfile` в версионный файл). Сокет аддона без аутентификации — Allow Remote Connections не включаем. Ключи API в файлы проекта не пишем — их ставит пользователь в env.
+| Задача | Официальный | Community |
+|--------|-------------|-----------|
+| Выполнить Python в Blender | `execute_blender_code` | `execute_blender_code` |
+| Посмотреть результат | `get_screenshot_of_area_as_image` (3D-вид), `render_thumbnail_to_path` / `render_viewport_to_path` + прочитать PNG | `look` (solid/material/rendered/wireframe) |
+| Состав сцены | `get_objects_summary`, `get_object_detail_summary`, `get_blendfile_summary_*` | `get_scene_info`, `get_object_info` |
+| Документация API и мануал | `search_api_docs`, `get_python_api_docs`, `search_manual_docs` — **используй перед незнакомым API**, это убирает ошибки версий | — |
+| Пакетно без GUI | `*_for_cli` (фоновый Blender) | — |
+| Готовые ассеты, AI-генерация | скачать CC0 с Poly Haven (api.polyhaven.com) и импортировать через `execute_blender_code` | `search_assets` / `import_asset`, `generate_3d` (ключи — у пользователя) |
 
-**Альтернатива — официальный Blender Lab MCP** (Blender 5.1+, ориентирован на анализ сцены, отладку и скрипты, а не на генерацию арта). Детали установки я не проверял — смотри projects.blender.org/lab/blender_mcp. Для генерации и ассет-библиотек предпочтителен mcp-for-blender.
+Если Blender закрыт или сервер в нём не запущен, MCP подключается, но каждый вызов падает. Тогда скажи пользователю: «открой Blender и запусти MCP-сервер (или включи Auto-start)».
+
+**Безопасность:** `execute_blender_code` выполняет любой Python — **перед серией правок сохраняй .blend** (`bpy.ops.wm.save_as_mainfile` в версионный файл). Сокет без аутентификации — только localhost. Ключи API в файлы проекта не пишем.
 
 **Без MCP (пакетно, headless):** `blender -b scene.blend --python tools/export.py -- <args>` — экспорт, LOD, проверки в CI.
 
@@ -39,10 +51,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task blender
 ```
 
 - **Один вызов `execute_blender_code` = один логический шаг** (стена, окно, карниз), а не всё здание. Скрипты складывай в `art/blender/scripts/` проекта — их можно перезапустить и поправить параметры.
-- **После каждого шага — `look`** минимум с 2 ракурсов (общий + крупный план), в конце — `rendered` с HDRI. Сравни с референсом и честно перечисли расхождения, прежде чем идти дальше.
+- **После каждого шага — скриншот** (`get_screenshot_of_area_as_image` / `look`) минимум с 2 ракурсов (общий + крупный план), в конце — `rendered` с HDRI. Сравни с референсом и честно перечисли расхождения, прежде чем идти дальше.
 - **Реальные размеры в метрах** (Unit Scale 1.0). Масштаб — первое, что выдаёт «игрушечность».
 - **Неразрушающее моделирование**: модификаторы (Bevel, Array, Mirror, Solidify, Weighted Normal), Geometry Nodes, коллекции-киты. Применяем модификаторы только при экспорте.
-- **Комбинируй источники**: процедурное моделирование (точная архитектура) + Poly Haven (CC0 текстуры, HDRI, пропсы) + `generate_3d` (органика и сложные пропсы, требуют чистки) + MPFB2 (люди).
+- **Комбинируй источники**: процедурное моделирование (точная архитектура) + Poly Haven (CC0 текстуры, HDRI, пропсы) + `generate_3d` в community-варианте (органика и сложные пропсы, требуют чистки) + MPFB2 (люди).
 
 ## 2. Типы ассетов
 

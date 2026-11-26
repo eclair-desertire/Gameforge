@@ -4,11 +4,15 @@ engine_version: {{ENGINE_VERSION}}
 track: {{TRACK}}
 stage: setup
 platforms: {{PLATFORMS}}
+tools: {{TOOLS}}
+review: lean
 updated: {{DATE}}
 
 <!--
 Этапы: setup → concept → design → prototype → production → polish → release → live
 track: mobile | pc | both
+tools: инструменты проекта для автопроверки при старте сессии, через пробел: unity godot unreal blender aseprite gimp blockbench flstudio voxel fx ffmpeg
+review: full | lean | solo — строгость ворот ревью команды (gameforge:team)
 Поля выше читает хук SessionStart (scripts/status.sh) — сохраняй формат `ключ: значение`.
 -->
 

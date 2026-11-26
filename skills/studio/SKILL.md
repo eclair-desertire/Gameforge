@@ -17,27 +17,28 @@ description: Дирижёр полного цикла разработки иг�
 
 | Этап | Скилл | Выход из этапа (ворота) |
 |------|-------|--------------------------|
-| setup | gameforge:setup | движок и версия определены, CLI/MCP проверены, `.gameforge/` создан |
-| concept | gameforge:ideas → gameforge:concept | `concept.md` заполнен, вердикт «делаем» с датой |
-| design | gameforge:design | `gdd.md`: 3 столпа, core loop, MVP scope, cut list |
-| prototype | gameforge:plan → gameforge:build → gameforge:playtest | core loop играбелен, плейтест записан, решение keep/kill/retune |
+| setup | gameforge:setup, gameforge:doctor | движок и версия определены, инструменты и MCP проверены (`tools:` в state.md), `.gameforge/` создан |
+| concept | gameforge:ideas → gameforge:concept | `concept.md` заполнен, вердикт «делаем» с датой (creative-director; в `full` — ещё TD-TECH, PR-SCOPE) |
+| design | gameforge:design | `gdd.md`: 3 столпа, core loop, MVP scope, cut list; CD-PILLARS, TD-TECH, арт-библия (AD-STYLE) |
+| prototype | gameforge:plan → gameforge:build → gameforge:playtest | core loop играбелен, плейтест записан, CD-PLAYTEST: keep/kill/retune |
 | production | gameforge:plan → gameforge:build (циклом) | вертикальный срез, затем контент по `backlog.md` |
 | polish | gameforge:polish | juice/аудио/UI, производительность в бюджете платформы |
-| release | gameforge:release | сборки прошли чеклист, стор/сабмит готов |
+| release | gameforge:release | сборки прошли чеклист, стор/сабмит готов, QL-RELEASE |
 | live | gameforge:live | метрики собираются, план апдейтов, решение iterate/scale/sunset |
 
 ### Параллельные потоки (идут через этапы, а не после них)
 
 | Поток | Скилл | Агент | Стартует на |
 |-------|-------|-------|-------------|
-| Код | gameforge:build | `gameplay-programmer` | prototype |
-| QA | gameforge:playtest | `qa-playtester` | prototype (после каждого milestone) |
+| Дизайн (экономика, UX, тексты) | gameforge:design | `game-designer`, `economy-designer`, `ux-designer`, `writer` | concept → весь цикл |
+| Код | gameforge:build | `gameplay-programmer`, `ui-programmer`, движковый специалист → ревью `lead-programmer` | prototype |
+| QA | gameforge:playtest | `qa-playtester` → приёмка `qa-lead` | prototype (после каждого milestone) |
 | Левел-дизайн | gameforge:level-design | `level-designer` | prototype (greybox) → production |
-| 3D-арт (Blender, воксели, low-poly) | gameforge:blender, gameforge:voxel | `3d-artist` | vertical slice (в прототипе — только greybox) |
-| 2D-арт (пиксель-арт, HD 2D, UI) | gameforge:pixel-art, gameforge:art-2d | `2d-artist` | prototype (палитра и стиль-тест) → vertical slice |
-| Эффекты (VFX) | gameforge:vfx | `2d-artist` | prototype (хит/взрыв для feel) → polish |
-| Звук | gameforge:audio | `audio-designer` | prototype (2–3 заглушки для feel) → vertical slice |
-| Музыка (FL Studio) | gameforge:music | `composer` | vertical slice (лейтмотив) → production |
+| 3D-арт (Blender, воксели, low-poly) | gameforge:blender, gameforge:voxel | `3d-artist` → `art-director`, внедрение `tech-artist` | vertical slice (в прототипе — только greybox) |
+| 2D-арт (пиксель-арт, HD 2D, UI) | gameforge:pixel-art, gameforge:art-2d | `2d-artist` → `art-director`, внедрение `tech-artist` | prototype (палитра и стиль-тест) → vertical slice |
+| Эффекты (VFX) | gameforge:vfx | `2d-artist` → `tech-artist` (системы частиц) | prototype (хит/взрыв для feel) → polish |
+| Звук | gameforge:audio | `audio-designer` → `audio-director` | prototype (2–3 заглушки для feel) → vertical slice |
+| Музыка (FL Studio) | gameforge:music | `composer` → `audio-director` | vertical slice (лейтмотив) → production |
 | Маркетинг | gameforge:marketing | `marketing-lead` | **concept** (хук, гифки), Steam-страница — vertical slice |
 | Сборки | gameforge:release | `build-engineer` | prototype (тестовые сборки) |
 
@@ -68,25 +69,13 @@ GameForge — дирижёр: свои этапы + вызов сильных у
 
 Движковые детали — в **gameforge:engine-unity**, **gameforge:engine-godot**, **gameforge:engine-unreal**.
 
-## 5. Роли и экономия: кому отдавать работу
+## 5. Команда
 
-Основная (старшая) модель тратит токены только на то, что требует контекста разговора, вкуса или решений. Всё, что **точно так же** сделает младшая модель, отдаётся субагенту.
-
-| Модель | Агенты плагина | Что им отдавать |
-|--------|----------------|-----------------|
-| **haiku** | `scout` (только чтение), `runner` (исполнение) | поиск по проекту и логам, чтение документации и веб-страниц, сбор сигналов трендов, прогон сборок/тестов/ffmpeg/пакетного экспорта по готовым командам, `check-tools`, раскладка файлов |
-| **sonnet** | `gameplay-programmer`, `qa-playtester`, `build-engineer`, `level-designer`, `audio-designer`, `marketing-lead` | задача из backlog с критерием «готово, когда», тесты и плейтест-отчёты, CI и конфиги сторов, greybox по документу уровня, звук по sound-list, тексты стора и контент-план |
-| **opus** | `game-designer`, `2d-artist`, `3d-artist`, `composer` | концепт, GDD, баланс; арт и музыка, где нужна визуальная/слуховая оценка и итерации по качеству |
-| **основная сессия** | — | разговор с пользователем, выбор между вариантами, архитектура, ревью результатов субагентов, сложные баги |
-
-**Отдавай субагенту, когда** задачу можно описать брифом в 5–10 строк (путь, движок, ID задачи, точные команды/параметры, критерий готовности) и результат проверяем (тест, файл, число, превью).
-**Оставляй себе, когда** пересказ контекста дороже самой работы (1–3 вызова инструментов), нужен вкус или решение, или нужен диалог с пользователем (субагент не может задать вопрос пользователю).
-
-Правила:
-- **Проверяй результат** субагента сам (diff, файл, превью, вывод теста) — отчёт не доказательство.
-- Независимые задачи разных потоков (`[art]` и `[audio]`, поиск в логах и сборка) запускай параллельно, если они не трогают одни и те же файлы.
-- Бриф агенту: путь к проекту, движок, ID задачи из backlog, критерий готовности, что НЕ трогать. Модель можно переопределить при вызове (параметр `model`), если задача проще/сложнее обычной для роли.
-- Внешние инструменты субагенту — только после gameforge:doctor (субагент не сможет спросить согласие на установку).
+Работу выполняет команда из 27 агентов — дирекция, лиды направлений, специалисты и дешёвые помощники, у каждого своя модель и зона файлов. Состав, маршрутизация, бриф, формат отчёта, ворота ревью и сценарии — **gameforge:team**. Коротко:
+- ты — руководитель студии: говоришь с пользователем, раздаёшь работу, проверяешь результат сам (отчёт агента — не доказательство);
+- механическое → `scout`/`runner` (haiku), задачи backlog → специалисты (sonnet), видение, арт, музыка, архитектура и вердикты → opus-роли;
+- независимые задачи разных потоков — параллельно; агент не может спросить пользователя, поэтому всё нужное — в брифе, а NEEDS_DECISION/BLOCKED ты сразу выносишь пользователю;
+- строгость ревью — поле `review:` в `state.md` (`full` / `lean` по умолчанию / `solo`).
 
 ## 6. Память проекта (обязательно)
 

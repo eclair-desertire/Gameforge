@@ -76,32 +76,39 @@ def app_version(app: str) -> str:
         return ""
 
 
+CMDS: dict[str, str] = {}  # server name -> "command args..." (to check which implementation)
+
+
 def mcp_servers() -> dict[str, str]:
     """name -> where it is configured (project .mcp.json, user/local scope in ~/.claude.json)."""
     found: dict[str, str] = {}
+
+    def take(servers: dict, where: str):
+        for k, v in (servers or {}).items():
+            if k not in found:
+                found[k] = where
+                if isinstance(v, dict):
+                    CMDS[k] = " ".join([str(v.get("command", "")), *map(str, v.get("args", [])), str(v.get("url", ""))])
+
     pj = PROJECT / ".mcp.json"
     if pj.exists():
         try:
-            for k in json.loads(pj.read_text()).get("mcpServers", {}):
-                found[k] = "проект (.mcp.json)"
+            take(json.loads(pj.read_text()).get("mcpServers", {}), "проект (.mcp.json)")
         except ValueError:
             found["__broken__"] = f"{pj} — битый JSON"
     cj = HOME / ".claude.json"
     if cj.exists():
         try:
             d = json.loads(cj.read_text())
-            for k in d.get("mcpServers", {}) or {}:
-                found.setdefault(k, "пользователь (~/.claude.json)")
-            proj = (d.get("projects") or {}).get(str(PROJECT), {})
-            for k in proj.get("mcpServers", {}) or {}:
-                found.setdefault(k, "локально для проекта (~/.claude.json)")
+            take(((d.get("projects") or {}).get(str(PROJECT), {})).get("mcpServers", {}), "локально для проекта (~/.claude.json)")
+            take(d.get("mcpServers", {}), "пользователь (~/.claude.json)")
         except ValueError:
             pass
     return found
 
 
 def configured(servers: dict[str, str], *keys: str):
-    for name, where in servers.items():
+    for name, where in sorted(servers.items(), key=lambda kv: "community" in kv[0]):
         low = name.lower()
         if any(k in low for k in keys):
             return name, where
@@ -155,16 +162,43 @@ def c_builtin(name):
     add(name, "missing", f"gameforge-{name}: Python-окружение ещё не создано (создастся при первом запуске, ~1 мин)", f'bash "{PLUGIN_ROOT}/scripts/run-mcp.sh" --install')
 
 
+def blender_addon():
+    """('official'|'community'|None, path). Official = Blender Lab extension with manifest maintainer Blender Lab."""
+    for man in sorted(glob.glob(os.path.expanduser("~/Library/Application Support/Blender/*/extensions/*/*/blender_manifest.toml")), reverse=True):
+        txt = Path(man).read_text(errors="ignore")
+        if "Blender Lab" in txt and 'id = "mcp"' in txt:
+            return "official", str(Path(man).parent)
+    hit = first("~/Library/Application Support/Blender/*/scripts/addons/*blender*mcp*", "~/Library/Application Support/Blender/*/scripts/addons/addon.py", "~/Library/Application Support/Blender/*/extensions/*/*blender*mcp*")
+    return ("community", hit) if hit else (None, None)
+
+
 def c_blender(servers):
     app = first("/Applications/Blender.app") or which("blender")
     if not app:
         add("blender", "missing", "Blender не установлен", "brew install --cask blender  (или blender.org)")
         return
     add("blender", "ok", f"Blender {app_version(app) or ''} — {app}".strip())
-    addon = first("~/Library/Application Support/Blender/*/scripts/addons/*mcp*", "~/Library/Application Support/Blender/*/extensions/*/*mcp*")
-    add("blender", "ok" if addon else "warn", f"аддон MCP: {addon}" if addon else "аддон MCP не найден в папках Blender", "" if addon else "uvx mcp-for-blender install-addon → Blender → Preferences → Add-ons → включить «MCP for Blender»")
-    c_mcp(servers, "blender", ("blender",), "blender.json")
-    add("blender", "ok" if port_open(9876) else "off", "сервер аддона на :9876 " + ("отвечает" if port_open(9876) else "не отвечает"), "" if port_open(9876) else "Blender → N-панель → MCP → Start MCP Server")
+    kind, path = blender_addon()
+    if kind == "official":
+        add("blender", "ok", f"аддон: официальный Blender Lab MCP — {path}")
+    elif kind == "community":
+        add("blender", "ok", f"аддон: mcp-for-blender (community) — {path}")
+    else:
+        add("blender", "missing", "MCP-аддон в Blender не найден", "Blender 5.1+: Preferences → Get Extensions → репозиторий https://lab.blender.org/ → MCP (официальный); или uvx mcp-for-blender install-addon")
+    hit = configured(servers, "blender")
+    if not hit:
+        tpl = "blender" if kind != "community" else "blender-community"
+        add("blender", "config", "MCP для blender не прописан", f"gameforge:doctor — сервер «{tpl}» из mcp-templates/blender.json")
+    else:
+        cmd = CMDS.get(hit[0], "")
+        impl = "official" if "projects.blender.org/lab" in cmd else ("community" if ("mcp-for-blender" in cmd or "blender-mcp" in cmd) else None)
+        if kind and impl and impl != kind:
+            add("blender", "config", f"MCP «{hit[0]}» ({impl}) не подходит к аддону ({kind}) — протоколы разные", "gameforge:doctor — заменить на сервер под установленный аддон (mcp-templates/blender.json)")
+        else:
+            add("blender", "ok", f"MCP «{hit[0]}» прописан: {hit[1]}")
+    on = port_open(9876)
+    start = "Blender → Preferences → Add-ons → MCP → Start (или включить Auto-start)" if kind == "official" else "Blender → N-панель → MCP → Start MCP Server"
+    add("blender", "ok" if on else "off", "сервер в Blender на :9876 " + ("отвечает" if on else "не отвечает (Blender закрыт или сервер не запущен)"), "" if on else start)
 
 
 def c_aseprite(servers):
@@ -188,7 +222,7 @@ def c_gimp(servers):
         return
     v = app_version(app)
     old = v and tuple(int(x) for x in v.split(".")[:2] if x.isdigit()) < (3, 2)
-    add("gimp", "warn" if old else "ok", f"GIMP {v} — {app}" + (" (нужен 3.2+)" if old else ""), "обновить GIMP до 3.2+" if old else "")
+    add("gimp", "missing" if old else "ok", f"GIMP {v} — {app}" + (" — для MCP нужен 3.2+" if old else ""), "обновить GIMP до 3.2+ (gimp.org или brew upgrade --cask gimp) — делает пользователь" if old else "")
     plug = first("~/Library/Application Support/GIMP/3.*/plug-ins/*mcp*")
     add("gimp", "ok" if plug else "missing", f"плагин GIMP MCP: {plug}" if plug else "плагин GIMP MCP не установлен", "" if plug else "uvx gimp-mcp-plugin@latest install-plugin → перезапустить GIMP")
     c_mcp(servers, "gimp", ("gimp",), "gimp.json")
@@ -262,7 +296,8 @@ ICON = {"ok": "[ok]   ", "missing": "[нет]  ", "off": "[выкл] ", "config"
 
 def main(argv):
     as_json = "--json" in argv
-    args = [a for a in argv if a != "--json"]
+    brief = "--brief" in argv  # for the SessionStart hook: only problems, nothing if all ready
+    args = [a for a in argv if a not in ("--json", "--brief")]
     tools: list[str] = []
     i = 0
     while i < len(args):
@@ -273,7 +308,7 @@ def main(argv):
         tools += ALL if args[i] == "all" else [args[i]]
         i += 1
     if not tools:
-        print(__doc__)
+        print(__doc__)  # also: --brief (problems only, for hooks)
         return 2
     unknown = [t for t in tools if t not in CHECKS]
     if unknown:
@@ -290,6 +325,17 @@ def main(argv):
             seen.add(t)
             CHECKS[t](servers)
     blocking = [r for r in R if r["status"] in ("missing", "off", "config")]
+    if brief:
+        line = lambda r: f"  - {r['tool']}: {r['msg']}" + (f" → {r['fix']}" if r["fix"] else "")
+        need = [r for r in R if r["status"] in ("missing", "config")]
+        off = [r for r in R if r["status"] == "off"]
+        if need:
+            print("--- ИНСТРУМЕНТЫ: требуется установка/настройка (скажи пользователю явно, затем gameforge:doctor) ---")
+            print("\n".join(map(line, need)))
+        if off:
+            print("--- Не запущено сейчас (понадобится в работе — попроси пользователя запустить) ---")
+            print("\n".join(map(line, off)))
+        return 1 if blocking else 0
     if as_json:
         print(json.dumps({"project": str(PROJECT), "ready": not blocking, "results": R}, ensure_ascii=False, indent=1))
     else:

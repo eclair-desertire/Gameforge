@@ -14,6 +14,7 @@ GameForge — дирижёр: свои этапы, ворота и состоя�
   marketplace.json       локальный маркетплейс (для установки через /plugin)
 skills/
   studio/                дирижёр: где мы, что дальше, ворота этапов, параллельные потоки
+  team/                  команда из 27 агентов: роли, модели, бриф, отчёт, ворота ревью, сценарии
   project-memory/        память проекта: context.md, history.md, версии GDD
   setup/                 подключение проекта: движок, CLI, MCP, .gameforge/, CLAUDE.md
   doctor/                проверка, установка (с согласия) и активация программ и MCP перед работой
@@ -35,9 +36,7 @@ skills/
   engine-unity/          Unity CLI, unity mcp, playmode-проверка, карта unity:*
   engine-godot/          headless, тесты, экспорт, godot-mcp / godot-ai
   engine-unreal/         Build.sh, RunUAT, автотесты, Python, Unreal MCP
-agents/                  game-designer, gameplay-programmer, qa-playtester, level-designer,
-                         3d-artist, 2d-artist, audio-designer, composer, marketing-lead, build-engineer,
-                         scout и runner (haiku) — дешёвые поиск и исполнение
+agents/                  27 агентов команды (дирекция, лиды, специалисты, помощники) — см. «Команда»
 hooks/hooks.json         SessionStart: выводит память проекта (и после сжатия контекста)
                          Stop: напоминает дописать history.md, если файлы менялись
 scripts/                 detect-engine.sh, status.sh, history-check.sh, run-mcp.sh,
@@ -71,21 +70,28 @@ templates/               state, context, history, ideas, concept, gdd, backlog, 
 3. **Stop-хук** напоминает дописать history.md, если файлы проекта менялись, а журнал не обновлялся 20+ минут (не чаще раза в 45 минут; пороги — `GAMEFORGE_HISTORY_MINUTES`, `GAMEFORGE_NAG_MINUTES`).
 4. Если проект под git — `.gameforge/` коммитится вместе с кодом.
 
-## Модели и экономия токенов
+## Команда
 
-Каждый агент плагина закреплён за моделью по сложности работы (поле `model` в `agents/*.md`):
+Основная сессия — руководитель студии; работу выполняют агенты со своей специализацией, моделью и зоной файлов. Директора и лиды принимают работу специалистов на воротах ревью (строгость — `review: full | lean | solo` в `state.md`). Подробно — `skills/team`.
 
-| Модель | Агенты | Работа |
-|--------|--------|--------|
-| haiku | scout, runner | поиск, чтение логов и доков, сбор трендов; сборки, тесты, ffmpeg, пакетный экспорт по готовым командам |
-| sonnet | gameplay-programmer, qa-playtester, build-engineer, level-designer, audio-designer, marketing-lead | задачи backlog с критерием готовности |
-| opus | game-designer, 2d-artist, 3d-artist, composer | дизайн и баланс; арт и музыка с оценкой качества |
+| Уровень | Агенты (модель) |
+|---------|-----------------|
+| Дирекция | creative-director (opus), technical-director (opus), producer (sonnet) |
+| Лиды | game-designer (opus), lead-programmer (opus), art-director (opus), audio-director (sonnet), qa-lead (sonnet), marketing-lead (sonnet) |
+| Дизайн | economy-designer, level-designer, ux-designer, writer (sonnet) |
+| Код | gameplay-programmer, ui-programmer, unity-specialist, godot-specialist, unreal-specialist (sonnet) |
+| Арт | 2d-artist (opus), 3d-artist (opus), tech-artist (sonnet) |
+| Звук | audio-designer (sonnet), composer (opus) |
+| QA и сборки | qa-playtester, build-engineer (sonnet) |
+| Помощники | scout, runner (haiku) — поиск, чтение логов, прогон готовых команд |
 
-Основная сессия оставляет себе разговор, решения и проверку результатов субагентов (правила — `skills/studio`, раздел 5).
+Каждый агент заканчивает ответ отчётом СТАТУС / ФАЙЛЫ / ПРОВЕРЕНО / НЕ ПРОВЕРЕНО / РЕШИТЬ ПОЛЬЗОВАТЕЛЮ / ДАЛЬШЕ; вопросы пользователю задаёт только основная сессия.
 
 ## Проверка инструментов
 
-Перед работой с внешней программой скиллы запускают `python3 scripts/check-tools.py --task <задача>` (или `all`) и **явно перечисляют, что нужно установить или включить**; установка и подключение MCP — через `gameforge:doctor`, только с согласия пользователя.
+- **При старте каждой сессии** в игровом проекте хук проверяет инструменты из поля `tools:` в `.gameforge/state.md` и выводит, что нужно установить, а что просто не запущено.
+- **Перед работой** с внешней программой скиллы запускают `python3 scripts/check-tools.py --task <задача>` (или `all`) и **явно перечисляют, что нужно установить или включить**; установка и подключение MCP — через `gameforge:doctor`, только с согласия пользователя.
+- **Агенты** проверяют инструменты сами и при нехватке возвращают BLOCKED, ничего не устанавливая.
 
 ## MCP-серверы
 
@@ -104,7 +110,8 @@ templates/               state, context, history, ideas, concept, gdd, backlog, 
 | `gimp.json` | [gimp-mcp/gimp-mcp](https://github.com/gimp-mcp/gimp-mcp) (GPL-3.0) | HD 2D, текстуры, UI, маркетинговые картинки |
 | `blockbench.json` | [jasonjgardner/blockbench-mcp-plugin](https://github.com/jasonjgardner/blockbench-mcp-plugin) (GPL-3.0) | low-poly и блочные модели, UV, анимация |
 | `flstudio.json` | [rosasynthesiz/flstudio-mcp](https://github.com/rosasynthesiz/flstudio-mcp) (MIT) | музыка: piano roll, паттерны, микшер, плагины |
-| `blender.json`, `unity.json`, `godot.json`, `unreal.json` | см. ниже | 3D и движки |
+| `blender.json` | официальный [Blender Lab MCP](https://projects.blender.org/lab/blender_mcp) (GPL-3.0) или [mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) (MIT) — под установленный аддон | 3D в Blender |
+| `unity.json`, `godot.json`, `unreal.json` | см. ниже | движки |
 
 ## Установка
 
@@ -141,7 +148,8 @@ claude plugin install gameforge@gameforge-local
 - Unity CLI и `unity mcp` — официальный плагин Unity (`unity:unity-cli`).
 - Godot MCP — [Coding-Solo/godot-mcp](https://github.com/Coding-Solo/godot-mcp) (MIT), [hi-godot/godot-ai](https://github.com/hi-godot/godot-ai) (MIT).
 - Unreal MCP — официальный от Epic (UE 5.8+, experimental), community: [runreal/unreal-mcp](https://github.com/runreal/unreal-mcp), [ChiR24/Unreal_mcp](https://github.com/ChiR24/Unreal_mcp).
-- Blender MCP — [ahujasid/mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) (MIT, бывш. blender-mcp); официальный Blender Lab MCP (Blender 5.1+).
+- Blender MCP — официальный [lab/blender_mcp](https://projects.blender.org/lab/blender_mcp) (Blender 5.1+, GPL-3.0) и [ahujasid/mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) (MIT; пакет `blender-mcp` на PyPI — это он).
+- Идея команды со специализациями и воротами ревью — [Claude Code Game Studios](https://github.com/Donchitos/Claude-Code-Game-Studios); состав, роли, ворота и тексты GameForge — свои.
 - Люди — [MPFB2](https://static.makehumancommunity.org/mpfb.html) (core-ассеты CC0, код GPL).
 - Идеи структуры — [awesome-gamedev-agent-skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills) (Apache-2.0: один engine-скилл + дисциплины поверх, headless-проверки) и [OhMyGame](https://github.com/WhiteTowerAI/ohmygame) (Apache-2.0: цикл «дизайн → код → запуск → игра агентом → фикс», состояние проекта в файле).
 
