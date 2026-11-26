@@ -1,0 +1,14 @@
+{
+  "_comment": "mcp-for-blender (бывш. blender-mcp, MIT, не от Blender Foundation). Нужно: uv, Blender 3.0+, аддон (`uvx mcp-for-blender install-addon` → Preferences → Add-ons → «Interface: MCP for Blender» → N-панель → Start MCP Server). Порт 9876. Ключи генераторов (Rodin, Hunyuan3D, Tripo, Meshy, Sketchfab) пользователь добавляет в env сам. Сокет аддона без аутентификации — не включать Allow Remote Connections. Альтернатива — официальный Blender Lab MCP (Blender 5.1+), см. skills/blender/SKILL.md.",
+  "mcpServers": {
+    "blender": {
+      "command": "uvx",
+      "args": ["mcp-for-blender"],
+      "env": {
+        "BLENDER_HOST": "localhost",
+        "BLENDER_PORT": "9876",
+        "DISABLE_TELEMETRY": "true"
+      }
+    }
+  }
+}

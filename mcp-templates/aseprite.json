@@ -1,0 +1,13 @@
+{
+  "_comment": "diivi/aseprite-mcp (MIT, ~1k★, 123 инструмента: shading ramps с hue shift, dithering, outline, палитры, анимация, view_sprite/lint, run_lua_script). Нужно: Aseprite (платный, Steam/itch — покупает пользователь), uv, Python 3.13+. Установка: git clone https://github.com/diivi/aseprite-mcp {{ASEPRITE_MCP_DIR}}. ASEPRITE_PATH на macOS: /Applications/Aseprite.app/Contents/MacOS/aseprite или ~/Library/Application Support/Steam/steamapps/common/Aseprite/Aseprite.app/Contents/MacOS/aseprite. run_lua_script исполняет произвольный Lua — только свои скрипты. Альтернатива: willibrandon/pixel-mcp (Go).",
+  "mcpServers": {
+    "aseprite": {
+      "command": "uv",
+      "args": ["--directory", "{{ASEPRITE_MCP_DIR}}", "run", "-m", "aseprite_mcp"],
+      "env": {
+        "ASEPRITE_PATH": "{{ASEPRITE_PATH}}",
+        "ASEPRITE_TIMEOUT_SECONDS": "120"
+      }
+    }
+  }
+}

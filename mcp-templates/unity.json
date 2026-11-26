@@ -1,0 +1,9 @@
+{
+  "_comment": "Unity MCP встроен в Unity CLI (`unity mcp`). Нужен пакет com.unity.pipeline в проекте (`unity pipeline install`). В Claude Code с шеллом CLI предпочтительнее MCP — MCP оставляем для захвата Game View и job-инструментов. {{PROJECT_PATH}} подставляет скилл gameforge:setup.",
+  "mcpServers": {
+    "unity": {
+      "command": "unity",
+      "args": ["mcp", "--project-path", "{{PROJECT_PATH}}", "--exclude-tools", "exec"]
+    }
+  }
+}

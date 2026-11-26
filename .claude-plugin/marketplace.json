@@ -1,0 +1,16 @@
+{
+  "name": "gameforge-local",
+  "owner": {
+    "name": "eclair"
+  },
+  "plugins": [
+    {
+      "name": "gameforge",
+      "source": "./",
+      "description": "Личный полный цикл разработки игр для Unity, Godot и Unreal."
+    }
+  ],
+  "metadata": {
+    "description": "Личный маркетплейс: GameForge — полный цикл разработки игр."
+  }
+}

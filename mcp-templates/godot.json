@@ -1,0 +1,12 @@
+{
+  "_comment": "Вариант A (по умолчанию, без аддона): Coding-Solo/godot-mcp — запуск/остановка проекта, debug-вывод, создание сцен и нод. Вариант B (живой редактор, Godot 4.7+): hi-godot/godot-ai — ставится аддоном, команду подключения генерирует кнопка Configure в доке Godot AI, руками не пишем. {{GODOT_PATH}} подставляет скилл gameforge:setup.",
+  "mcpServers": {
+    "godot": {
+      "command": "npx",
+      "args": ["-y", "@coding-solo/godot-mcp"],
+      "env": {
+        "GODOT_PATH": "{{GODOT_PATH}}"
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_comment": "rosasynthesiz/flstudio-mcp (MIT, 91 инструмент: микшер, плагины, piano roll, step sequencer, паттерны, плейлист, анализ микса, MIDI-экспорт, audio→MIDI). macOS: `uvx --from git+https://github.com/rosasynthesiz/flstudio-mcp fl-studio-mcp setup` (ставит controller script в FL, MIDI-порты создаёт сам) → открыть FL Studio → `... fl-studio-mcp connect` печатает точную запись для Claude Code — она главнее этого шаблона. Windows: loopMIDI с портами «FLStudioMCP RX/TX». Ограничения FL API: загрузка плагинов/сэмплов и рендер аудио — только руками в FL; ноты в piano roll — один раз за сессию запустить скрипт MCP_Apply. Альтернатива: karl-andres/fl-studio-mcp (IAC Driver).",
+  "mcpServers": {
+    "flstudio": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/rosasynthesiz/flstudio-mcp", "fl-studio-mcp"]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_comment": "Официальный Unreal MCP от Epic (экспериментальный, UE 5.8+): сервер живёт внутри процесса редактора и слушает локальный HTTP. Порт сверить с настройками плагина в редакторе (по умолчанию в доках Epic — 8000; godot-ai тоже использует 8000, одновременно не запускать). Для UE < 5.8 — см. engine-unreal/references/mcp.md (runreal/unreal-mcp через Python Remote Execution).",
+  "mcpServers": {
+    "unreal": {
+      "type": "http",
+      "url": "http://127.0.0.1:{{UNREAL_MCP_PORT}}/mcp"
+    }
+  }
+}

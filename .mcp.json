@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gameforge-voxel": {
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh", "voxel"]
+    },
+    "gameforge-fx": {
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh", "fx"]
+    }
+  }
+}

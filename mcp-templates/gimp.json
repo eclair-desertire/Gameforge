@@ -1,0 +1,10 @@
+{
+  "_comment": "gimp-mcp/gimp-mcp (бывш. maorcc/gimp-mcp, GPL-3.0, ~80 инструментов: слои, выделения, фильтры, текст, get_state_snapshot для визуальной проверки). Нужно: GIMP 3.2+, uv. Плагин: `uvx gimp-mcp-plugin@latest install-plugin` → перезапуск GIMP → Tools/Filters → MCP → Start Server (порт 9877, можно автозапуск). Версии плагина и сервера должны совпадать (check_server подскажет).",
+  "mcpServers": {
+    "gimp": {
+      "command": "uvx",
+      "args": ["gimp-mcp-plugin@latest"],
+      "env": { "GIMP_MCP_PORT": "9877" }
+    }
+  }
+}

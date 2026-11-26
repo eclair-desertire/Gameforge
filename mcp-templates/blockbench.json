@@ -1,0 +1,13 @@
+{
+  "_comment": "jasonjgardner/blockbench-mcp-plugin (GPL-3.0, ~640★): low-poly/блочные модели, UV и рисование текстур, анимации, .bbmodel/.glb. Вариант HTTP — Blockbench открыт, плагин загружен из https://jasonjgardner.github.io/blockbench-mcp-plugin/mcp.js (File → Plugins → Load from URL), адрес по умолчанию :3000/bb-mcp. Вариант stdio (без редактора) — сервер bbmodel, нужен Node.js. Плагин исполняет код внутри Blockbench — только доверенные запросы.",
+  "mcpServers": {
+    "blockbench": {
+      "type": "http",
+      "url": "http://localhost:3000/bb-mcp"
+    },
+    "bbmodel": {
+      "command": "npx",
+      "args": ["-y", "github:jasonjgardner/blockbench-mcp-plugin", "--root", "{{PROJECT_PATH}}/art/blockbench"]
+    }
+  }
+}
