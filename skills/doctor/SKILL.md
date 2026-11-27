@@ -48,6 +48,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 
 **GIMP MCP**: `uvx gimp-mcp-plugin@<v> install-plugin` (сначала `--dry-run` — покажет папку), сервер с той же `<v>` (`claude mcp add --scope user gimp -- uvx gimp-mcp-plugin@<v>`), перезапуск GIMP → Tools → MCP → Start MCP Server. Не `@latest`: версии плагина и сервера разъедутся.
 
+**FL Studio MCP**: `git clone https://github.com/rosasynthesiz/flstudio-mcp ~/Tools/flstudio-mcp && uv sync` (прочитай `setup_cli.py`: ставит controller script и piano-roll мост, служб не создаёт) → `.venv/bin/fl-studio-mcp setup --wait` → пользователь перезапускает FL → `doctor`. Если `NO_HEARTBEAT` — пользователь в MIDI Settings выбирает Controller type «FLStudioMCP (user)» и одинаковый Port на входе и выходе; порты должны существовать (держи `fl-studio-mcp-daemon` на время настройки). Сервер: `claude mcp add --scope user flstudio -- ~/Tools/flstudio-mcp/.venv/bin/fl-studio-mcp` (сам присоединяется к мосту или поднимает порты).
+
 **Большие загрузки** всегда в фоне, с докачкой (`curl -C -`) и проверкой архива (`unzip -t`, хеш, если источник его публикует).
 
 ## 4. Прописать MCP

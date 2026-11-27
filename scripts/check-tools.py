@@ -274,7 +274,25 @@ def c_flstudio(servers):
     app = first("/Applications/FL Studio*.app")
     add("flstudio", "ok" if app else "missing", f"FL Studio {app_version(app) if app else ''} — {app}" if app else "FL Studio не установлен (платный — решение пользователя)", "" if app else "установить FL Studio 2025+ (image-line.com)")
     script = first("~/Documents/Image-Line/FL Studio/Settings/Hardware/*MCP*", "~/Documents/Image-Line/FL Studio/Settings/Hardware/*mcp*")
-    add("flstudio", "ok" if script else "missing", f"controller script: {script}" if script else "controller script FL Studio MCP не установлен", "" if script else "uvx --from git+https://github.com/rosasynthesiz/flstudio-mcp fl-studio-mcp setup → открыть FL Studio")
+    add("flstudio", "ok" if script else "missing", f"controller script: {script}" if script else "controller script FL Studio MCP не установлен", "" if script else "git clone https://github.com/rosasynthesiz/flstudio-mcp ~/Tools/flstudio-mcp && cd ~/Tools/flstudio-mcp && uv sync && .venv/bin/fl-studio-mcp setup --wait → перезапустить FL Studio")
+    reg = HOME / "Library/Preferences/Image-Line/reg.xml"
+    if script and reg.exists():
+        import re as _re
+        txt = reg.read_text(errors="ignore")
+        m = _re.search(r'<Key Name="MIDI input">(.*?)</Key>\s*</Key>', txt, _re.S)
+        blk = m.group(1) if m else ""
+        dev = _re.search(r'<Key Name="FLStudioMCP[^"]*">(.*?)(?:</Key>|$)', blk, _re.S)
+        if not dev:
+            add("flstudio", "off", "FL Studio ещё не видел MIDI-порты FLStudioMCP", "держи мост запущенным (fl-studio-mcp-daemon или MCP-сервер) и перезапусти FL Studio")
+        else:
+            d = dev.group(1)
+            folder = _re.search(r'Name="ScriptFolder"[^>]*?(?:/>|>([^<]*)<)', d)
+            port = _re.search(r'Name="Port"[^>]*>([^<]*)<', d)
+            if not folder or not (folder.group(1) or "").strip():
+                add("flstudio", "config", "в MIDI Settings у входа FLStudioMCP не выбран Controller type — скрипт не загружен",
+                    "FL Studio → Options → MIDI Settings → Input FLStudioMCP: Enable, Controller type = FLStudioMCP (user), Port N; Output FLStudioMCP: тот же Port N")
+            else:
+                add("flstudio", "ok", f"FL привязал скрипт к FLStudioMCP (порт {port.group(1) if port else '?'})")
     c_mcp(servers, "flstudio", ("flstudio", "fl-studio", "fl_studio", "fruity"), "flstudio.json")
 
 

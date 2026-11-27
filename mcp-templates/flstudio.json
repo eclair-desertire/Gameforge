@@ -1,9 +1,8 @@
 {
-  "_comment": "rosasynthesiz/flstudio-mcp (MIT, 91 инструмент: микшер, плагины, piano roll, step sequencer, паттерны, плейлист, анализ микса, MIDI-экспорт, audio→MIDI). macOS: `uvx --from git+https://github.com/rosasynthesiz/flstudio-mcp fl-studio-mcp setup` (ставит controller script в FL, MIDI-порты создаёт сам) → открыть FL Studio → `... fl-studio-mcp connect` печатает точную запись для Claude Code — она главнее этого шаблона. Windows: loopMIDI с портами «FLStudioMCP RX/TX». Ограничения FL API: загрузка плагинов/сэмплов и рендер аудио — только руками в FL; ноты в piano roll — один раз за сессию запустить скрипт MCP_Apply. Альтернатива: karl-andres/fl-studio-mcp (IAC Driver).",
+  "_comment": "rosasynthesiz/flstudio-mcp (MIT, ~90 инструментов: транспорт, каналы и step grid, паттерны, плейлист, микшер, плагины и пресеты, эффекты по намерению, анализ микса, ноты в piano roll, MIDI-экспорт, audio→MIDI). Проверено: 2.0.0 + FL Studio 2026 (26.1), macOS. Установка (надёжнее uvx из git): git clone https://github.com/rosasynthesiz/flstudio-mcp ~/Tools/flstudio-mcp && uv sync → `.venv/bin/fl-studio-mcp setup --wait` (ставит controller script в ~/Documents/Image-Line/FL Studio/Settings/Hardware/FLStudioMCP/, создаёт MIDI-порты FLStudioMCP) → перезапуск FL. Если `fl-studio-mcp doctor` показывает NO_HEARTBEAT: FL → Options → MIDI Settings → Input FLStudioMCP: Enable, Controller type = FLStudioMCP (user), Port N; Output FLStudioMCP: тот же Port N. FL видит порты только пока работает сервер или `fl-studio-mcp-daemon`. Ограничения API: загрузить плагин/сэмпл, отрендерить аудио и удалить паттерн нельзя; ноты в piano roll — после MCP_Apply в piano roll и права «Универсальный доступ» для приложения, запустившего сервер.",
   "mcpServers": {
     "flstudio": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/rosasynthesiz/flstudio-mcp", "fl-studio-mcp"]
+      "command": "{{HOME}}/Tools/flstudio-mcp/.venv/bin/fl-studio-mcp"
     }
   }
 }
