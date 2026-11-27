@@ -42,7 +42,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 
 ## 5. Активировать и проверить
 1. Новый сервер в `.mcp.json` подхватывается при старте сессии, Claude Code спросит одобрение. Скажи пользователю явно: **«перезапусти сессию (или `/mcp` → подключить/reconnect) и одобри сервер <имя>»**.
-2. Серверы внутри приложений запускает пользователь: Blender — N-панель → MCP → Start; GIMP — MCP → Start Server; Blockbench — плагин MCP; FL Studio — открыть проект после `fl-studio-mcp setup`.
+2. Серверы внутри приложений запускает пользователь: Blender — официальный аддон: Preferences → System → Network → Allow Online Access, затем Add-ons → MCP → Start MCP Bridge Server (community-аддон: N-панель → MCP → Start); GIMP — MCP → Start Server; Blockbench — плагин MCP; FL Studio — открыть проект после `fl-studio-mcp setup`.
 3. Повтори `check-tools.py` и вызови самый дешёвый инструмент сервера (Blender `get_scene_info`, GIMP `check_server`, Aseprite — создать холст 8×8 во временной папке, FL Studio — статус/transport, voxel `vox_scene action=list`, fx `fx_palette`).
 4. Запиши в `.gameforge/context.md` → «Соглашения и команды»: какие инструменты и MCP настроены, версии, где лежат.
 

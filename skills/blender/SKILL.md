@@ -21,7 +21,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task blender
 | Blender | 5.1+ | 3.0+ |
 | Аддон | расширение `MCP` из репозитория `https://lab.blender.org/` (Preferences → Get Extensions → Repositories) | `uvx mcp-for-blender install-addon` → включить «Interface: MCP for Blender» |
 | Сервер MCP | `uvx --from "git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp" blender-mcp` (⚠ пакет `blender-mcp` на PyPI — это другой, community-проект) | `uvx mcp-for-blender` |
-| Запуск в Blender | Preferences → Add-ons → MCP → Start (или галка Auto-start) | N-панель → MCP for Blender → Start MCP Server |
+| Запуск в Blender | **Preferences → System → Network → Allow Online Access** (иначе расширение не откроет даже локальный порт), затем Preferences → Add-ons → MCP → Start MCP Bridge Server (или галка Auto-start) | N-панель → MCP for Blender → Start MCP Server |
 | Шаблон | `mcp-templates/blender.json` → `blender` | `mcp-templates/blender.json` → `blender-community` |
 
 **Инструменты по задачам:**
@@ -35,7 +35,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task blender
 | Пакетно без GUI | `*_for_cli` (фоновый Blender) | — |
 | Готовые ассеты, AI-генерация | скачать CC0 с Poly Haven (api.polyhaven.com) и импортировать через `execute_blender_code` | `search_assets` / `import_asset`, `generate_3d` (ключи — у пользователя) |
 
-Если Blender закрыт или сервер в нём не запущен, MCP подключается, но каждый вызов падает. Тогда скажи пользователю: «открой Blender и запусти MCP-сервер (или включи Auto-start)».
+Если Blender закрыт или сервер в нём не запущен, MCP подключается, но каждый вызов падает. Тогда скажи пользователю: «открой Blender и запусти MCP-сервер (или включи Auto-start)». Аддон включён, а порт 9876 молчит — почти всегда выключен Allow Online Access.
+
+**Скриншоты:** после переключения вьюпорта в Material Preview / Rendered EEVEE несколько секунд компилирует шейдеры — объекты не видны («Compiling EEVEE engine shaders»). Подожди и сделай снимок повторно, прежде чем судить о результате.
+
+**Чистота сцены:** тестовые и вспомогательные объекты называй с префиксом (`GF_…`) и удаляй вместе с мешами и материалами; режим отображения и выделение возвращай как было.
 
 **Безопасность:** `execute_blender_code` выполняет любой Python — **перед серией правок сохраняй .blend** (`bpy.ops.wm.save_as_mainfile` в версионный файл). Сокет без аутентификации — только localhost. Ключи API в файлы проекта не пишем.
 

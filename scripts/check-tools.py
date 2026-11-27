@@ -197,7 +197,8 @@ def c_blender(servers):
         else:
             add("blender", "ok", f"MCP «{hit[0]}» прописан: {hit[1]}")
     on = port_open(9876)
-    start = "Blender → Preferences → Add-ons → MCP → Start (или включить Auto-start)" if kind == "official" else "Blender → N-панель → MCP → Start MCP Server"
+    start = ("Blender → Preferences → System → Network → включить Allow Online Access (без неё расширения не открывают даже локальный порт), "
+             "затем Preferences → Add-ons → MCP → Start MCP Bridge Server (или галка Auto-start)") if kind == "official" else "Blender → N-панель → MCP → Start MCP Server"
     add("blender", "ok" if on else "off", "сервер в Blender на :9876 " + ("отвечает" if on else "не отвечает (Blender закрыт или сервер не запущен)"), "" if on else start)
 
 
