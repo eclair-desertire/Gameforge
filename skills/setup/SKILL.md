@@ -27,8 +27,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-engine.sh" "<путь к проект
 | Godot | путь к бинарю: `which godot`, `/Applications/Godot.app/Contents/MacOS/Godot`, `godot --version` | попросить путь |
 | Unreal | `EngineAssociation` из .uproject → найти установку движка (`/Users/Shared/Epic Games/UE_<ver>`); наличие `RunUAT.sh` | попросить путь к движку |
 | Blender (если будет 3D) | `/Applications/Blender.app/Contents/MacOS/Blender --version`, `which uvx` | предложить установку Blender и uv; MCP — шаблон `blender.json` (см. gameforge:blender) |
-| Арт-инструменты (по арт-стилю из GDD) | Aseprite: `/Applications/Aseprite.app` или Steam; GIMP 3.2+: `/Applications/GIMP.app`; Blockbench; `which uv node` | спросить, что из этого пользователь использует; покупки (Aseprite, FL Studio) — решение пользователя |
-| Музыка | FL Studio установлен? (`/Applications/FL Studio*.app`) | музыка через gameforge:audio без DAW-MCP |
+| Арт-инструменты (по арт-стилю из GDD) | Aseprite: `/Applications/Aseprite.app` или Steam; GIMP 3.2+: `/Applications/GIMP.app`; Blockbench; `which uv node` | спросить, что из этого пользователь использует; покупки (Aseprite) — решение пользователя |
+| Музыка | `check-tools.py --task music`: FluidSynth, SoundFont, ffmpeg для встроенного gameforge-music | установить через gameforge:doctor (с согласия); FL Studio и другие DAW — ручная работа пользователя, без MCP |
 | Встроенные MCP плагина | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh" --selftest` (один раз: готовит Python-окружение для gameforge-voxel и gameforge-fx) | нужен python3 3.10+ или uv |
 | Аудио/видео | `which ffmpeg` | `brew install ffmpeg` — с согласия |
 | Все | `git status` — проект под git? Есть `.gitignore` под движок? Для Unity/Unreal — Git LFS для бинарных ассетов | предложить `git init` + gitignore + LFS |
@@ -47,9 +47,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/detect-engine.sh" "<путь к проект
    | Воксели | — встроенный **gameforge-voxel** (уже подключён плагином) | gameforge:voxel |
    | Low-poly / блочные модели | `blockbench.json` | gameforge:voxel |
    | Эффекты (VFX) | — встроенный **gameforge-fx** | gameforge:vfx |
-   | Музыка в FL Studio | `flstudio.json` | gameforge:music |
+   | Музыка и SFX кодом | — встроенный **gameforge-music** (нужны FluidSynth, SoundFont, ffmpeg) | gameforge:music, gameforge:audio |
 
-   Подставь плейсхолдеры: `{{PROJECT_PATH}}` (абсолютный путь), `{{GODOT_PATH}}`, `{{UNREAL_MCP_PORT}}` (спроси/посмотри в настройках плагина редактора; по умолчанию 8000), `{{ASEPRITE_MCP_DIR}}` (куда пользователь согласился клонировать diivi/aseprite-mcp, например `~/Tools/aseprite-mcp`), `{{ASEPRITE_PATH}}`. Клонирование репозиториев и установка плагинов в GIMP/FL Studio/Blockbench — только с согласия пользователя, по шагам из `_comment` шаблона.
+   Подставь плейсхолдеры: `{{PROJECT_PATH}}` (абсолютный путь), `{{GODOT_PATH}}`, `{{UNREAL_MCP_PORT}}` (спроси/посмотри в настройках плагина редактора; по умолчанию 8000), `{{ASEPRITE_MCP_DIR}}` (куда пользователь согласился клонировать diivi/aseprite-mcp, например `~/Tools/aseprite-mcp`), `{{ASEPRITE_PATH}}`. Клонирование репозиториев и установка плагинов в GIMP/Blockbench — только с согласия пользователя, по шагам из `_comment` шаблона.
 3. Ключ `_comment` в `.mcp.json` не переноси.
 4. Скажи пользователю: после изменения `.mcp.json` Claude Code спросит одобрение сервера при следующем запуске в проекте.
 

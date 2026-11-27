@@ -26,7 +26,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task audio
 
 | Путь | Когда | Лицензия |
 |------|-------|----------|
-| Своя генерация в коде: sfxr/jsfxr, ChipTone, Bfxr | ретро, UI, прототип | своё |
+| **`mus_sfx` (gameforge-music)**: coin, jump, laser, explosion, hit, hurt, powerup, blip, ui_click/confirm/cancel, error, magic, whoosh, footstep, land — по 3–8 вариаций для рандома | ретро, UI, прототип, заглушки на весь core loop за минуты | своё |
+| sfxr/jsfxr, ChipTone, Bfxr вручную | то же, с ручной подстройкой | своё |
 | Синтез/Foley самому (Audacity, Reaper, Vital) | уникальный характер | своё |
 | Библиотеки: Sonniss GDC bundle, Kenney audio, freesound.org (только CC0/CC-BY), OpenGameArt | быстрые качественные SFX | читать лицензию каждого файла; CC-BY → строка в credits |
 | AI-генерация SFX/музыки (сервисы text-to-audio) | черновики, эмбиент | **проверить коммерческие права в тарифе пользователя**; записать сервис и дату в credits |
@@ -36,7 +37,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task audio
 
 ## 4. Музыка
 
-Сочинение и аранжировка в FL Studio через MCP — скилл **gameforge:music**. Здесь — общие требования к музыке в игре.
+Сочинение, аранжировка, лупы, стемы и стингеры — скилл **gameforge:music** (встроенный gameforge-music). Здесь — общие требования к музыке в игре.
 
 
 - Лупы без щелчка (переход по нулю, хвост реверба в начало), длина кратна тактам.

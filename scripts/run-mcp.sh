@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch a GameForge MCP server over stdio: voxel | fx.
+# Launch a GameForge MCP server over stdio: voxel | fx | music.
 #   bash run-mcp.sh voxel          — run the server (Claude Code does this from .mcp.json)
 #   bash run-mcp.sh --install      — prepare the Python environment once (recommended after install)
 #   bash run-mcp.sh --selftest     — import both servers and render a tiny test
@@ -27,7 +27,7 @@ python_cmd() {
 }
 
 case "${1:-}" in
-  voxel|fx)
+  voxel|fx|music)
     py="$(python_cmd)"
     # shellcheck disable=SC2086
     exec $py "$srv_dir/$1/server.py" ;;
@@ -43,8 +43,10 @@ sc = V.Scene("t"); m = sc.add_model("c", (24, 16, 36)); V.gen_character(sc, m, h
 d = pathlib.Path(tempfile.mkdtemp())
 V.save_vox(sc, d / "c.vox"); V.export_mesh(sc, d / "c.glb")
 fr, meta = F.render_effect("hit", size=64); F.write_effect(fr, meta, d, "hit")
+sys.path.insert(0, str(root / "music")); import musiccore as MU, audio as AU
+song = MU.compose({"mood": "chiptune", "bars": 4, "seed": 1}); x, _ = AU.render(song, "chip"); AU.write_wav(d / "music.wav", x)
 print("selftest ok:", sorted(p.name for p in d.iterdir()))
 PY
     ;;
-  *) echo "usage: run-mcp.sh voxel|fx|--install|--selftest" >&2; exit 2 ;;
+  *) echo "usage: run-mcp.sh voxel|fx|music|--install|--selftest" >&2; exit 2 ;;
 esac

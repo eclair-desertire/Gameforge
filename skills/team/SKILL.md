@@ -44,7 +44,7 @@ description: Команда студии GameForge — 27 агентов со с
 | `2d-artist` | opus | пиксель-арт (Aseprite), HD 2D (GIMP), эффекты (gameforge-fx) | art-director |
 | `3d-artist` | opus | Blender, воксели (gameforge-voxel), Blockbench | art-director |
 | `audio-designer` | sonnet | SFX, эмбиент, обработка, внедрение звука | audio-director |
-| `composer` | opus | музыка в FL Studio, адаптивные слои, стемы | audio-director |
+| `composer` | opus | музыка кодом (gameforge-music): темы, лейтмотив, адаптивные слои, стингеры; MIDI для ручной доработки в DAW | audio-director |
 | `qa-playtester` | sonnet | автотесты, прогон игры, баг-репорты, плейтест-отчёт | qa-lead |
 | `build-engineer` | sonnet | сборки, CI, Steam/itch/сторы | qa-lead / technical-director |
 

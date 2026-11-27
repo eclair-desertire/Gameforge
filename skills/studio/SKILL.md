@@ -38,7 +38,7 @@ description: Дирижёр полного цикла разработки иг�
 | 2D-арт (пиксель-арт, HD 2D, UI) | gameforge:pixel-art, gameforge:art-2d | `2d-artist` → `art-director`, внедрение `tech-artist` | prototype (палитра и стиль-тест) → vertical slice |
 | Эффекты (VFX) | gameforge:vfx | `2d-artist` → `tech-artist` (системы частиц) | prototype (хит/взрыв для feel) → polish |
 | Звук | gameforge:audio | `audio-designer` → `audio-director` | prototype (2–3 заглушки для feel) → vertical slice |
-| Музыка (FL Studio) | gameforge:music | `composer` → `audio-director` | vertical slice (лейтмотив) → production |
+| Музыка (кодом: gameforge-music; FL Studio — вручную) | gameforge:music | `composer` → `audio-director` | vertical slice (лейтмотив) → production |
 | Маркетинг | gameforge:marketing | `marketing-lead` | **concept** (хук, гифки), Steam-страница — vertical slice |
 | Сборки | gameforge:release | `build-engineer` | prototype (тестовые сборки) |
 

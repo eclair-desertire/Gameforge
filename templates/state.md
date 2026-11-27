@@ -11,7 +11,7 @@ updated: {{DATE}}
 <!--
 Этапы: setup → concept → design → prototype → production → polish → release → live
 track: mobile | pc | both
-tools: инструменты проекта для автопроверки при старте сессии, через пробел: unity godot unreal blender aseprite gimp blockbench flstudio voxel fx ffmpeg
+tools: инструменты проекта для автопроверки при старте сессии, через пробел: unity godot unreal blender mpfb aseprite gimp blockbench voxel fx music
 review: lean | full — строгость ворот ревью команды (gameforge:team); по умолчанию lean
 Поля выше читает хук SessionStart (scripts/status.sh) — сохраняй формат `ключ: значение`.
 -->

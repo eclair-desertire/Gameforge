@@ -33,13 +33,13 @@ TASKS = {
     "lowpoly": ["blockbench"],
     "blender": ["blender"],
     "humans": ["blender", "mpfb"],
-    "music": ["flstudio", "ffmpeg"],
-    "audio": ["ffmpeg"],
+    "music": ["music"],
+    "audio": ["music"],
     "unity": ["unity"],
     "godot": ["godot"],
     "unreal": ["unreal"],
 }
-ALL = ["git", "uv", "node", "ffmpeg", "voxel", "fx", "blender", "mpfb", "aseprite", "gimp", "blockbench", "flstudio", "unity", "godot", "unreal"]
+ALL = ["git", "uv", "node", "ffmpeg", "voxel", "fx", "blender", "mpfb", "aseprite", "gimp", "blockbench", "music", "flstudio", "unity", "godot", "unreal"]
 
 
 def which(*names):
@@ -135,7 +135,7 @@ def c_git():
 
 def c_uv():
     p = which("uvx")
-    add("uv", "ok" if p else "missing", p or "uv/uvx не найден (нужен для Blender/GIMP/FL Studio MCP)", "" if p else "brew install uv")
+    add("uv", "ok" if p else "missing", p or "uv/uvx не найден (нужен для Blender/GIMP/Aseprite MCP)", "" if p else "brew install uv")
 
 
 def c_node():
@@ -271,34 +271,28 @@ def c_blockbench(servers):
 
 
 def c_flstudio(servers):
+    """FL Studio is the user's manual DAW (no MCP): just report whether it is there."""
     app = first("/Applications/FL Studio*.app")
-    add("flstudio", "ok" if app else "missing", f"FL Studio {app_version(app) if app else ''} — {app}" if app else "FL Studio не установлен (платный — решение пользователя)", "" if app else "установить FL Studio 2025+ (image-line.com)")
-    script = first("~/Documents/Image-Line/FL Studio/Settings/Hardware/*MCP*", "~/Documents/Image-Line/FL Studio/Settings/Hardware/*mcp*")
-    add("flstudio", "ok" if script else "missing", f"controller script: {script}" if script else "controller script FL Studio MCP не установлен", "" if script else "git clone https://github.com/rosasynthesiz/flstudio-mcp ~/Tools/flstudio-mcp && cd ~/Tools/flstudio-mcp && uv sync && .venv/bin/fl-studio-mcp setup --wait → перезапустить FL Studio")
-    reg = HOME / "Library/Preferences/Image-Line/reg.xml"
-    if script and reg.exists():
-        import re as _re
-        txt = reg.read_text(errors="ignore")
-        m = _re.search(r'<Key Name="MIDI input">(.*?)</Key>\s*</Key>', txt, _re.S)
-        blk = m.group(1) if m else ""
-        dev = _re.search(r'<Key Name="FLStudioMCP[^"]*">(.*?)(?:</Key>|$)', blk, _re.S)
-        if not dev:
-            add("flstudio", "off", "FL Studio ещё не видел MIDI-порты FLStudioMCP", "держи мост запущенным (fl-studio-mcp-daemon или MCP-сервер) и перезапусти FL Studio")
-        else:
-            d = dev.group(1)
-            folder = _re.search(r'Name="ScriptFolder"[^>]*?(?:/>|>([^<]*)<)', d)
-            port = _re.search(r'Name="Port"[^>]*>([^<]*)<', d)
-            fl_running = subprocess.run(["pgrep", "-x", "OsxFL"], capture_output=True).returncode == 0
-            doctor = str(HOME / "Tools/flstudio-mcp/.venv/bin/fl-studio-mcp") + " doctor"
-            if fl_running:  # FL writes reg.xml only on exit -> the file is stale while it runs
-                add("flstudio", "warn", "FL Studio открыт: его настройки MIDI в файле обновятся только после выхода — живой статус связи даёт doctor",
-                    f"{doctor}  (READY = связь есть; NO_HEARTBEAT = выбрать Controller type FLStudioMCP (user))")
-            elif not folder or not (folder.group(1) or "").strip():
-                add("flstudio", "config", "в MIDI Settings у входа FLStudioMCP не выбран Controller type — скрипт не загружен",
-                    "FL Studio → Options → MIDI Settings → Input FLStudioMCP: Enable, Controller type = FLStudioMCP (user), Port N; Output FLStudioMCP: тот же Port N")
-            else:
-                add("flstudio", "ok", f"FL привязал скрипт к FLStudioMCP (порт {port.group(1) if port else '?'})")
-    c_mcp(servers, "flstudio", ("flstudio", "fl-studio", "fl_studio", "fruity"), "flstudio.json")
+    add("flstudio", "ok" if app else "warn", f"FL Studio {app_version(app)} — ручная DAW пользователя (без MCP)" if app else "FL Studio не установлен — необязательно: музыку делает gameforge-music", "")
+
+
+def c_music(servers):
+    """gameforge-music: chip synth needs nothing; SoundFont render needs FluidSynth + a SoundFont; OGG/LUFS need ffmpeg."""
+    c_builtin("music")
+    fs = which("fluidsynth") or first("/opt/homebrew/bin/fluidsynth", "/usr/local/bin/fluidsynth")
+    add("music", "ok" if fs else "missing", f"FluidSynth — {fs}" if fs else "FluidSynth не установлен — без него только чиптюн-синтезатор",
+        "" if fs else "brew install fluid-synth")
+    sf_dir = Path(os.path.expanduser(os.environ.get("GAMEFORGE_SOUNDFONTS", "~/.cache/gameforge/soundfonts")))
+    sf = os.environ.get("GAMEFORGE_SOUNDFONT") or first(str(sf_dir / "*.sf3"), str(sf_dir / "*.sf2"))
+    add("music", "ok" if sf else "missing", f"SoundFont — {sf}" if sf else f"нет SoundFont в {sf_dir} — живые инструменты недоступны",
+        "" if sf else "gameforge:doctor → music: MuseScore_General.sf3 (MIT, 40 МБ) в ~/.cache/gameforge/soundfonts")
+    ff = which("ffmpeg")
+    add("music", "ok" if ff else "missing", f"ffmpeg — {ff} (LUFS, OGG/MP3)" if ff else "ffmpeg не найден — без него только WAV и приблизительная громкость",
+        "" if ff else "brew install ffmpeg")
+    if ff and not which("oggenc"):
+        enc = subprocess.run([ff, "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
+        if " libvorbis " not in enc:
+            add("music", "warn", "OGG кодируется встроенным Vorbis-кодером ffmpeg (годится); для лучшего качества OGG — oggenc", "brew install vorbis-tools (необязательно)")
 
 
 def c_unity(servers):
@@ -340,11 +334,12 @@ CHECKS = {
     "gimp": c_gimp,
     "blockbench": c_blockbench,
     "flstudio": c_flstudio,
+    "music": lambda s: c_music(s),
     "unity": c_unity,
     "godot": c_godot,
     "unreal": c_unreal,
 }
-NEEDS_UV = {"blender", "gimp", "flstudio", "aseprite"}
+NEEDS_UV = {"blender", "gimp", "aseprite"}
 NEEDS_NODE = {"blockbench"}
 
 ICON = {"ok": "[ok]   ", "missing": "[нет]  ", "off": "[выкл] ", "config": "[mcp]  ", "warn": "[?]    "}

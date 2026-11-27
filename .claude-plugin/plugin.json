@@ -1,8 +1,8 @@
 {
   "name": "gameforge",
   "displayName": "GameForge",
-  "version": "0.7.3",
-  "description": "Личный полный цикл разработки игр: идея → концепт → GDD → прототип → продакшн → полировка → релиз → live. Unity (CLI + MCP), Godot, Unreal; арт: Blender, воксели (свой MCP gameforge-voxel), пиксель-арт (Aseprite), HD 2D (GIMP), Blockbench, VFX (свой MCP gameforge-fx); музыка в FL Studio; код, QA, левел-дизайн, звук, маркетинг; mobile и PC/Steam.",
+  "version": "0.8.0",
+  "description": "Личный полный цикл разработки игр: идея → концепт → GDD → прототип → продакшн → полировка → релиз → live. Unity (CLI + MCP), Godot, Unreal; арт: Blender, воксели (свой MCP gameforge-voxel), пиксель-арт (Aseprite), HD 2D (GIMP), Blockbench, VFX (свой MCP gameforge-fx); музыка и SFX кодом (свой MCP gameforge-music, без DAW); код, QA, левел-дизайн, звук, маркетинг; mobile и PC/Steam.",
   "author": {
     "name": "eclair"
   },
@@ -11,7 +11,7 @@
     "agents",
     "aseprite",
     "blockbench",
-    "fl-studio",
+    "chiptune",
     "game-design",
     "gamedev",
     "gimp",
@@ -20,6 +20,7 @@
     "mobile",
     "music",
     "pixel-art",
+    "sfx",
     "steam",
     "team",
     "unity",
@@ -40,6 +41,13 @@
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh",
         "fx"
+      ]
+    },
+    "gameforge-music": {
+      "command": "bash",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh",
+        "music"
       ]
     }
   }

@@ -1,8 +1,0 @@
-{
-  "_comment": "rosasynthesiz/flstudio-mcp (MIT, ~90 инструментов: транспорт, каналы и step grid, паттерны, плейлист, микшер, плагины и пресеты, эффекты по намерению, анализ микса, ноты в piano roll, MIDI-экспорт, audio→MIDI). Проверено: 2.0.0 + FL Studio 2026 (26.1), macOS. Установка (надёжнее uvx из git): git clone https://github.com/rosasynthesiz/flstudio-mcp ~/Tools/flstudio-mcp && uv sync → `.venv/bin/fl-studio-mcp setup --wait` (ставит controller script в ~/Documents/Image-Line/FL Studio/Settings/Hardware/FLStudioMCP/, создаёт MIDI-порты FLStudioMCP) → перезапуск FL. Если `fl-studio-mcp doctor` показывает NO_HEARTBEAT: FL → Options → MIDI Settings → Input FLStudioMCP: Enable, Controller type = FLStudioMCP (user), Port N; Output FLStudioMCP: тот же Port N. FL видит порты только пока работает сервер или `fl-studio-mcp-daemon`. Ограничения API: загрузить плагин/сэмпл, отрендерить аудио и удалить паттерн нельзя; ноты в piano roll — после MCP_Apply в piano roll и права «Универсальный доступ» для приложения, запустившего сервер.",
-  "mcpServers": {
-    "flstudio": {
-      "command": "{{HOME}}/Tools/flstudio-mcp/.venv/bin/fl-studio-mcp"
-    }
-  }
-}

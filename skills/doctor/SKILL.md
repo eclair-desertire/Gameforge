@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Проверяет, установлены ли и включены ли программы, CLI и MCP-серверы для задачи (Blender, Aseprite, GIMP, Blockbench, FL Studio, Unity, Godot, Unreal, uv, Node, ffmpeg, встроенные gameforge-voxel и gameforge-fx), явно сообщает, что нужно установить, ставит с согласия пользователя, прописывает MCP в .mcp.json и проверяет, что сервер реально активен. Используй перед работой, которой нужен внешний инструмент, когда MCP не отвечает или его инструментов нет в сессии, или когда просят настроить окружение.
+description: Проверяет, установлены ли и включены ли программы, CLI и MCP-серверы для задачи (Blender, MPFB, Aseprite, GIMP, Blockbench, Unity, Godot, Unreal, uv, Node, ffmpeg, FluidSynth и SoundFont, встроенные gameforge-voxel, gameforge-fx и gameforge-music), явно сообщает, что нужно установить, ставит с согласия пользователя, прописывает MCP в .mcp.json и проверяет, что сервер реально активен. Используй перед работой, которой нужен внешний инструмент, когда MCP не отвечает или его инструментов нет в сессии, или когда просят настроить окружение.
 ---
 
 # Doctor — инструменты и MCP перед работой
@@ -28,7 +28,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 >
 > Что могу сделать сам (1, 2, прописать MCP) — сделать?
 
-Разделяй: **что агент может поставить сам** (brew, uvx, git clone, запись `.mcp.json`) и **что делает только пользователь** (покупка Aseprite/FL Studio, вход в аккаунты, клики внутри приложений, обновление приложений с паролем администратора, одобрение MCP-сервера в Claude Code).
+Разделяй: **что агент может поставить сам** (brew, uvx, git clone, запись `.mcp.json`) и **что делает только пользователь** (покупка Aseprite, вход в аккаунты, клики внутри приложений, обновление приложений с паролем администратора, одобрение MCP-сервера в Claude Code).
 
 ## 3. Установка — только после «да»
 - Команды из колонки `→` отчёта. Длинные (brew cask, клон) — в фоне, с отчётом по завершении.
@@ -48,7 +48,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 
 **GIMP MCP**: `uvx gimp-mcp-plugin@<v> install-plugin` (сначала `--dry-run` — покажет папку), сервер с той же `<v>` (`claude mcp add --scope user gimp -- uvx gimp-mcp-plugin@<v>`), перезапуск GIMP → Tools → MCP → Start MCP Server. Не `@latest`: версии плагина и сервера разъедутся.
 
-**FL Studio MCP**: `git clone https://github.com/rosasynthesiz/flstudio-mcp ~/Tools/flstudio-mcp && uv sync` (прочитай `setup_cli.py`: ставит controller script и piano-roll мост, служб не создаёт) → `.venv/bin/fl-studio-mcp setup --wait` → пользователь перезапускает FL → `doctor`. Если `NO_HEARTBEAT` — пользователь в MIDI Settings выбирает Controller type «FLStudioMCP (user)» и одинаковый Port на входе и выходе; порты должны существовать (держи `fl-studio-mcp-daemon` на время настройки). Сервер: `claude mcp add --scope user flstudio -- ~/Tools/flstudio-mcp/.venv/bin/fl-studio-mcp` (сам присоединяется к мосту или поднимает порты).
+**Музыка (gameforge-music, `--task music`)**: `brew install fluid-synth ffmpeg`; SoundFont **MuseScore_General.sf3** (MIT, 40 МБ): `curl -L -C - -o ~/.cache/gameforge/soundfonts/MuseScore_General.sf3 https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3` (+ рядом `MuseScore_General_License.md` из той же папки; размер 39 900 972 байт). Homebrew-ffmpeg собран без libvorbis — OGG пишется встроенным кодером (годится); лучше — `brew install vorbis-tools` (необязательно). Без всего этого работает только чиптюн в WAV — скажи об этом пользователю.
 
 **Большие загрузки** всегда в фоне, с докачкой (`curl -C -`) и проверкой архива (`unzip -t`, хеш, если источник его публикует).
 
@@ -58,9 +58,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 
 ## 5. Активировать и проверить
 1. Новый сервер в `.mcp.json` подхватывается при старте сессии, Claude Code спросит одобрение. Скажи пользователю явно: **«перезапусти сессию (или `/mcp` → подключить/reconnect) и одобри сервер <имя>»**.
-2. Серверы внутри приложений запускает пользователь: Blender — официальный аддон: Preferences → System → Network → Allow Online Access, затем Add-ons → MCP → Start MCP Bridge Server (community-аддон: N-панель → MCP → Start); GIMP — MCP → Start Server; Blockbench — плагин MCP; FL Studio — открыть проект после `fl-studio-mcp setup`.
-3. Повтори `check-tools.py` и вызови самый дешёвый инструмент сервера (Blender `get_scene_info`, GIMP `check_server`, Aseprite — создать холст 8×8 во временной папке, FL Studio — статус/transport, voxel `vox_scene action=list`, fx `fx_palette`).
+2. Серверы внутри приложений запускает пользователь: Blender — официальный аддон: Preferences → System → Network → Allow Online Access, затем Add-ons → MCP → Start MCP Bridge Server (community-аддон: N-панель → MCP → Start); GIMP — MCP → Start Server; Blockbench — плагин MCP.
+3. Повтори `check-tools.py` и вызови самый дешёвый инструмент сервера (Blender `get_scene_info`, GIMP `check_server`, Aseprite — создать холст 8×8 во временной папке, voxel `vox_scene action=list`, fx `fx_palette`, music `mus_status`).
 4. Запиши в `.gameforge/context.md` → «Соглашения и команды»: какие инструменты и MCP настроены, версии, где лежат.
 
 ## 6. Если пользователь отказался
-Скажи, чем это грозит качеству, и предложи обходной путь: пиксель-арт без Aseprite — gameforge-fx + Python; HD 2D без GIMP — gameforge-fx; музыка без FL Studio — MIDI + gameforge:audio; 3D без Blender — gameforge-voxel или Blockbench. Не делай вид, что инструмент есть.
+Скажи, чем это грозит качеству, и предложи обходной путь: пиксель-арт без Aseprite — gameforge-fx + Python; HD 2D без GIMP — gameforge-fx; музыка без FluidSynth/SoundFont — чиптюн gameforge-music в WAV; 3D без Blender — gameforge-voxel или Blockbench. Не делай вид, что инструмент есть.

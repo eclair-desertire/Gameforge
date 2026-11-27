@@ -2,7 +2,7 @@
 
 Личный плагин Claude Code для полного цикла разработки игр: **идея → концепт → GDD → прототип → продакшн → полировка → релиз → live**.
 Движки: **Unity** (Unity CLI + `unity mcp`), **Godot 4**, **Unreal Engine 5**. Треки: **mobile** и **pc/Steam**.
-Арт и звук: Blender, **воксели** и **VFX** (свои MCP-серверы плагина), пиксель-арт в Aseprite, HD 2D в GIMP, low-poly в Blockbench, музыка в FL Studio.
+Арт и звук: Blender, **воксели** и **VFX** (свои MCP-серверы плагина), пиксель-арт в Aseprite, HD 2D в GIMP, low-poly в Blockbench, **музыка и SFX кодом** (свой MCP gameforge-music, без DAW; FL Studio — вручную).
 
 GameForge — дирижёр: свои этапы, ворота и состояние проекта + вызов сильных узких скиллов, если они установлены (`unity:*`, `game-trend-skills:*`, `claude-code-game-studios`, `awesome-gamedev-agent-skills`).
 
@@ -30,7 +30,7 @@ skills/
   art-2d/                HD 2D в GIMP MCP: спрайты, текстуры, UI, капсулы Steam
   vfx/                   эффекты: флипбуки gameforge-fx + частицы движка
   audio/                 SFX и общие требования к звуку: лицензии, ffmpeg, микшер в движке
-  music/                 музыка в FL Studio MCP: лейтмотив, адаптивные слои, стемы
+  music/                 музыка кодом (gameforge-music): темы по настроению, лупы, стемы, стингеры
   polish/                game feel, UI, производительность
   marketing/             позиционирование, Steam-страница, трейлер, devlog, креативы, ASO
   release/  live/        сборки, Steam/itch/сторы; метрики и апдейты
@@ -42,9 +42,9 @@ hooks/hooks.json         SessionStart: выводит память проект�
                          Stop: напоминает дописать history.md, если файлы менялись
 scripts/                 detect-engine.sh, status.sh, history-check.sh, run-mcp.sh,
                          check-tools.py (что установлено/включено для задачи)
-mcp-servers/             свои MCP-серверы (Python): voxel/ (gameforge-voxel), fx/ (gameforge-fx)
+mcp-servers/             свои MCP-серверы (Python): voxel/ (gameforge-voxel), fx/ (gameforge-fx), music/ (gameforge-music)
 .claude-plugin/plugin.json  манифест + подключение gameforge-voxel и gameforge-fx (без внешних программ)
-mcp-templates/           unity, godot, unreal, blender, aseprite, gimp, blockbench, flstudio —
+mcp-templates/           unity, godot, unreal, blender, aseprite, gimp, blockbench —
                          пишутся в .mcp.json проекта по необходимости
 templates/               state, context, history, ideas, concept, gdd, backlog, level, sound-list, credits,
                          marketing-plan, playtest, adr
@@ -102,6 +102,7 @@ templates/               state, context, history, ideas, concept, gdd, backlog, 
 |--------|-------------|-----------|
 | `gameforge-voxel` | 12 | сцены и модели до 256³, рампы с hue shift, формы (box/ellipsoid/cylinder/cone/capsule, шероховатость), шум/эрозия/scatter, запечённое AO и световые рёбра, генераторы зданий, людей, деревьев, скал и рельефа, kit-штампы, превью (iso/turnaround/sheet), MagicaVoxel `.vox` (+ материалы), экспорт `.glb`/`.obj` с палитрой и emissive |
 | `gameforge-fx` | 6 | HDR-флипбуки (explosion, fire, smoke, magic, slash, hit, lightning, portal, heal, sparkle) с bloom, гладкие или пиксельные (общая палитра, жёсткая альфа, sel-out); пост-обработка (outline, тень, glow, rim light, грейдинг, quantize+dither, pixelate); normal maps; палитры `.gpl`; спрайтшиты и GIF; просмотр с pixel-art lint |
+| `gameforge-music` | 9 | музыка кодом без DAW: теория (15 настроений, лады, римские цифры), генераторы партий (период вопрос-ответ для мелодии, бас, арпеджио, ударные по стилям), MIDI, рендер чиптюн-синтом или FluidSynth + SoundFont (MuseScore_General, MIT), бесшовные лупы, адаптивные стемы по слоям, стингеры, LUFS, OGG/MP3/WAV, анализ (шов лупа, спектр), piano roll для самопроверки, 16 видов SFX |
 
 **Внешние** — плагин их не включает глобально: `gameforge:setup` пишет нужные в `.mcp.json` проекта.
 
@@ -110,7 +111,6 @@ templates/               state, context, history, ideas, concept, gdd, backlog, 
 | `aseprite.json` | [diivi/aseprite-mcp](https://github.com/diivi/aseprite-mcp) (MIT) | пиксель-арт и анимация в Aseprite |
 | `gimp.json` | [gimp-mcp/gimp-mcp](https://github.com/gimp-mcp/gimp-mcp) (GPL-3.0) | HD 2D, текстуры, UI, маркетинговые картинки |
 | `blockbench.json` | [jasonjgardner/blockbench-mcp-plugin](https://github.com/jasonjgardner/blockbench-mcp-plugin) (GPL-3.0) | low-poly и блочные модели, UV, анимация |
-| `flstudio.json` | [rosasynthesiz/flstudio-mcp](https://github.com/rosasynthesiz/flstudio-mcp) (MIT) | музыка: piano roll, паттерны, микшер, плагины |
 | `blender.json` | официальный [Blender Lab MCP](https://projects.blender.org/lab/blender_mcp) (GPL-3.0) или [mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) (MIT) — под установленный аддон | 3D в Blender |
 | `unity.json`, `godot.json`, `unreal.json` | см. ниже | движки |
 
