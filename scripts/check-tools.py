@@ -78,6 +78,7 @@ def app_version(app: str) -> str:
 
 
 CMDS: dict[str, str] = {}  # server name -> "command args..." (to check which implementation)
+ENVS: dict[str, dict] = {}  # server name -> env
 
 
 def mcp_servers() -> dict[str, str]:
@@ -90,6 +91,7 @@ def mcp_servers() -> dict[str, str]:
                 found[k] = where
                 if isinstance(v, dict):
                     CMDS[k] = " ".join([str(v.get("command", "")), *map(str, v.get("args", [])), str(v.get("url", ""))])
+                    ENVS[k] = v.get("env") or {}
 
     pj = PROJECT / ".mcp.json"
     if pj.exists():
@@ -197,6 +199,9 @@ def c_blender(servers):
             add("blender", "config", f"MCP «{hit[0]}» ({impl}) не подходит к аддону ({kind}) — протоколы разные", "gameforge:doctor — заменить на сервер под установленный аддон (mcp-templates/blender.json)")
         else:
             add("blender", "ok", f"MCP «{hit[0]}» прописан: {hit[1]}")
+            if impl == "official" and "BLENDER_PATH" not in ENVS.get(hit[0], {}):
+                add("blender", "config", f"у MCP «{hit[0]}» не задан BLENDER_PATH — фоновые *_for_cli-инструменты не работают",
+                    f"gameforge:doctor — добавить env BLENDER_PATH={app}/Contents/MacOS/Blender" if app.endswith(".app") else "gameforge:doctor — добавить env BLENDER_PATH=<бинарник Blender>")
     on = port_open(9876)
     start = ("Blender → Preferences → System → Network → включить Allow Online Access (без неё расширения не открывают даже локальный порт), "
              "затем Preferences → Add-ons → MCP → Start MCP Bridge Server (или галка Auto-start)") if kind == "official" else "Blender → N-панель → MCP → Start MCP Server"

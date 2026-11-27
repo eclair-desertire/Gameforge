@@ -1,5 +1,5 @@
 {
-  "_comment": "Ровно один из двух серверов — под установленный аддон (протоколы разные, оба на :9876). blender — официальный Blender Lab MCP (Blender 5.1+, расширение MCP с https://lab.blender.org/, GPL-3.0): сервер ставится из git Blender Lab; пакет blender-mcp на PyPI — это НЕ он. blender-community — mcp-for-blender (MIT): `uvx mcp-for-blender install-addon`, ключи генераторов (Rodin, Hunyuan3D, Tripo, Meshy, Sketchfab) пользователь добавляет в env сам. Сокет без аутентификации — только localhost.",
+  "_comment": "Ровно один из двух серверов — под установленный аддон (протоколы разные, оба на :9876). blender — официальный Blender Lab MCP (Blender 5.1+, расширение MCP с https://lab.blender.org/, GPL-3.0): сервер ставится из git Blender Lab; пакет blender-mcp на PyPI — это НЕ он. blender-community — mcp-for-blender (MIT): `uvx mcp-for-blender install-addon`, ключи генераторов (Rodin, Hunyuan3D, Tripo, Meshy, Sketchfab) пользователь добавляет в env сам. Сокет без аутентификации — только localhost. {{BLENDER_PATH}} — бинарник Blender (macOS: /Applications/Blender.app/Contents/MacOS/Blender): без него не работают *_for_cli-инструменты.",
   "mcpServers": {
     "blender": {
       "command": "uvx",
@@ -7,7 +7,10 @@
         "--from",
         "git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp",
         "blender-mcp"
-      ]
+      ],
+      "env": {
+        "BLENDER_PATH": "{{BLENDER_PATH}}"
+      }
     },
     "blender-community": {
       "command": "uvx",

@@ -26,11 +26,23 @@ rig = HS.add_builtin_rig(body, "game_engine")           # 1) РИГ ДО ОДЕ�
 HS.set_character_skin(<skins/…/*.mhmat>, body, skin_type="ENHANCED_SSS")
 HS.add_mhclo_asset(<eyes|eyebrows|eyelashes|teeth|tongue|hair|clothes/*.mhclo>, body, asset_type="Eyes"|…|"Clothes", subdiv_levels=1, material_type="MAKESKIN")
 ```
-- `macro`: `gender` 0..1, `age` (0.5 = 25 лет, 1.0 = 90; лет → `0.5 + (лет-25)/65*0.5`), `muscle`, `weight`, `proportions`, `height`, `cupsize`, `firmness`, `race` {asian, caucasian, african}. Рост нелинеен по `height` и зависит от race — **измеряй** по вершинам вычисленного меша и подгоняй (мужчина 1.75–1.85, женщина 1.60–1.70).
+- `macro`: `gender` 0..1, `age` (0.5 = 25 лет, 1.0 = 90; лет → `0.5 + (лет-25)/65*0.5`), `muscle`, `weight`, `proportions`, `height`, `cupsize`, `firmness`, `race` {asian, caucasian, african}. Рост нелинеен по `height` и зависит от race — **калибруй**: создай тело, измерь **голое** тело до одежды (после одежды Mask-модификаторы прячут стопы и замер врёт на ~20 см), поправь `height` (≈1.3 м на единицу) и пересоздай, пока не попадёшь ±1.5 см. Итог перепроверь «подошва обуви → макушка» по всем мешам рига (мужчина 1.75–1.85, женщина 1.60–1.70).
+- `subdiv_levels`: 1 — для рендера; **0 — для игры** (subsurf всё равно придётся убрать перед экспортом).
 - Поза: в MPFB только T-pose. Вращай кости **в пространстве скелета**: `q = (M⁻¹ · R_armature · M)`, `M = bone.matrix_local`. Угол руки считай по `tail_local - head_local` (**`Bone.vector` — в пространстве родителя!**). Руки вниз ≈ 85–87° от горизонтали, локоть −8° вперёд, предплечье с поворотом ладонями к бёдрам, фаланги согнуть 10–30° — иначе «манекен».
 - Одежда ассет-пака: часть футболок с логотипом MakeHuman — для игры бери без логотипа или замени текстуру.
 - После каждого шага — рендер крупного плана (лицо, руки, ткань) с DOF, а не только общий план.
 - Готовая функция `person(...)` — `../examples/street/70_human.py`.
+
+### Экспорт персонажа MPFB в движок (проверено: Unity Humanoid)
+
+1. Shape keys: у тела ~21 макро-таргет (`$md-…`), из-за них модификаторы не применяются. Нет эмоций/визем → `shape_key_remove(all=True, apply_mix=True)`; есть → удалить только `$md-*`.
+2. Subsurf от `add_mhclo_asset(subdiv_levels=1)` убрать; Mask-модификаторы (`Hide helpers`, `Delete.<одежда>` с invert) **применить удалением вершин**, служебные vertex groups удалить.
+3. Экспорт в REST (T-поза): Unity строит аватар из bind-позы. Поза из сцены (руки вниз) в FBX не попадает — её отдают анимацией или клипом позы.
+4. Ориентация: MPFB смотрит в −Y → в Unity +Z (Bake Axis Conversion OFF, `bake_space_transform=False` для рига) — см. export.md.
+5. Материалы MAKESKIN: base color у кожи внутри node group (`*_diffuse.png`) — FBX его не переносит, нужен манифест материалов; SSS в URP Lit нет. Глаза, волосы, брови, ресницы: Alpha ← diffuse.alpha → alpha clip, двусторонние (иначе глаза белые).
+6. Бюджет: `teeth_shape02` ≈ 7k треугольников из ~37k — для NPC бери лёгкие зубы или убирай зубы/язык.
+
+Готовый код подготовки — `../examples/export_unity/export_unity.py` (блок CafeOwner).
 
 ### Порядок
 

@@ -31,10 +31,42 @@ if lc:
 bpy.context.scene.cursor.location = (0, 0, 0)
 
 
-def person(name, macro, skin, equip, loc, rot_z, head_turn=0.0):
-    """Order matters: body -> rig -> skin -> fitted assets (so clothes get the armature)."""
+def z_range(objs):
+    dg = bpy.context.evaluated_depsgraph_get()
+    lo, hi = 1e9, -1e9
+    for ob in objs:
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        for v in me.vertices:
+            z = (ev.matrix_world @ v.co).z
+            lo, hi = min(lo, z), max(hi, z)
+        ev.to_mesh_clear()
+    return lo, hi
+
+
+def calibrated_body(macro, target_m, tol=0.015, slope=1.3):
+    """MPFB height is non-linear and race-dependent: measure the NAKED body (before clothes add
+    Mask modifiers that hide the feet), correct `height`, recreate until within tolerance."""
+    macro = dict(macro)
+    for _ in range(6):
+        body = HS.create_human(macro_detail_dict=macro, feet_on_ground=True, scale=0.1)
+        lo, hi = z_range([body])
+        h = hi - lo
+        if target_m is None or abs(h - target_m) <= tol:
+            return body, round(h, 3), macro["height"]
+        macro["height"] = max(0.0, min(1.0, macro["height"] + (target_m - h) / slope))
+        me = body.data
+        bpy.data.objects.remove(body, do_unlink=True)
+        if me.users == 0:
+            bpy.data.meshes.remove(me)
+    return body, round(h, 3), macro["height"]
+
+
+def person(name, macro, skin, equip, loc, rot_z, head_turn=0.0, target_m=None, subdiv=1):
+    """Order matters: body -> rig -> skin -> fitted assets (so clothes get the armature).
+    subdiv: 1 for renders, 0 for game characters."""
     before = set(bpy.data.objects)
-    body = HS.create_human(macro_detail_dict=macro, feet_on_ground=True, scale=0.1)
+    body, naked_h, height_param = calibrated_body(macro, target_m)
     body.name = f"GF_Human_{name}"
     rig = HS.add_builtin_rig(body, "game_engine")
     rig.name = f"GF_Human_{name}_Rig"
@@ -42,7 +74,7 @@ def person(name, macro, skin, equip, loc, rot_z, head_turn=0.0):
     added = []
     for sub, an, typ in equip:
         try:
-            HS.add_mhclo_asset(asset(sub, an, ".mhclo"), body, asset_type=typ, subdiv_levels=1, material_type="MAKESKIN")
+            HS.add_mhclo_asset(asset(sub, an, ".mhclo"), body, asset_type=typ, subdiv_levels=subdiv, material_type="MAKESKIN")
             added.append(f"{sub}/{an or '*'}")
         except Exception as e:
             added.append(f"FAILED {sub}/{an}: {e}")
@@ -87,11 +119,12 @@ def person(name, macro, skin, equip, loc, rot_z, head_turn=0.0):
     rig.location = loc
     rig.rotation_euler = (0, 0, math.radians(rot_z))
     bpy.context.view_layer.update()
-    # real height: top of the evaluated body
-    dg = bpy.context.evaluated_depsgraph_get()
-    ev = body.evaluated_get(dg)
-    zs = [(ev.matrix_world @ v.co).z for v in ev.data.vertices]
-    return {"assets": added, "height_m": round(max(zs) - min(zs), 3)}
+    # final check: shoe sole -> top of the head (all rigged meshes except hair)
+    parts = [o for o in bpy.data.objects if o.type == "MESH" and o.parent == rig]
+    sole, _ = z_range(parts)
+    _, top = z_range([body])
+    return {"assets": added, "naked_body_m": naked_h, "height_param": round(height_param, 3),
+            "sole_to_head_m": round(top - sole, 3)}
 
 
 def years(a):
@@ -99,21 +132,21 @@ def years(a):
 
 
 owner = person("CafeOwner",
-               {"gender": 1.0, "age": years(38), "muscle": 0.56, "weight": 0.55, "proportions": 0.65, "height": 0.72,
+               {"gender": 1.0, "age": years(38), "muscle": 0.56, "weight": 0.55, "proportions": 0.65, "height": 0.55,
                 "cupsize": 0.5, "firmness": 0.5, "race": {"caucasian": 0.8, "african": 0.08, "asian": 0.12}},
                "middleage_caucasian_male",
                [("eyes", "high-poly", "Eyes"), ("eyebrows", "eyebrow001", "Eyebrows"), ("eyelashes", "eyelashes01", "Eyelashes"),
                 ("teeth", "", "Teeth"), ("tongue", "", "Tongue"), ("hair", "short02", "Hair"),
                 ("clothes", "male_casualsuit03", "Clothes"), ("clothes", "shoes02", "Clothes")],
-               (-1.35, -1.25, 0.14), -28, head_turn=8)
+               (-1.35, -1.25, 0.14), -28, head_turn=8, target_m=1.80)
 walker = person("Passerby",
-                {"gender": 0.0, "age": years(30), "muscle": 0.5, "weight": 0.45, "proportions": 0.7, "height": 0.72,
+                {"gender": 0.0, "age": years(30), "muscle": 0.5, "weight": 0.45, "proportions": 0.7, "height": 0.55,
                  "cupsize": 0.5, "firmness": 0.55, "race": {"asian": 0.75, "caucasian": 0.2, "african": 0.05}},
                 "young_asian_female",
                 [("eyes", "high-poly", "Eyes"), ("eyebrows", "eyebrow010", "Eyebrows"), ("eyelashes", "eyelashes02", "Eyelashes"),
                  ("teeth", "", "Teeth"), ("tongue", "", "Tongue"), ("hair", "ponytail01", "Hair"),
                  ("clothes", "female_elegantsuit01", "Clothes"), ("clothes", "shoes06", "Clothes")],
-                (4.3, -1.7, 0.14), 62, head_turn=-15)
+                (4.3, -1.7, 0.14), 62, head_turn=-15, target_m=1.65)
 
 L.view(target=(1.5, -1.5, 1.1), distance=8.5, yaw=-15, pitch=86, shading="MATERIAL", lens=50)
 result = {"owner": owner, "passerby": walker, "objects": len(col.all_objects)}

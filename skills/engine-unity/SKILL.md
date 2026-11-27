@@ -43,6 +43,12 @@ unity recompile --project-path <p>                        # компиляция
 - Не подключается → сначала `unity status`: **Safe Mode** из-за ошибок компиляции — чини ошибки, а не правь сцены руками.
 - Таймауты, падение редактора → скажи пользователю, не обходи молча. `unity bug` не запускай без его согласия (отправляет логи в Unity).
 
+**Шпаргалка `script eval`** (проверено):
+- длинный код — файлом: `unity command script eval … "$(cat path/to/script.cs)"`;
+- `UnityEngine.Object`, а не `Object` (иначе неоднозначность с `object`); `UnityEditor.Json` internal — только через reflection;
+- вывод `--format json` может содержать сырые управляющие символы — парсить с `strict=False` / `raw_decode`;
+- консоль: `unity command console get` / `console clear`.
+
 ## Тесты и сборки
 
 ```bash
@@ -63,6 +69,13 @@ unity ci init --project-path <p>                          # сгенериров
 ## MCP
 
 `unity mcp` — встроенный в CLI stdio-сервер; шаблон — `mcp-templates/unity.json`, настройка — gameforge:setup или `unity mcp configure claude-code`. **В Claude Code с шеллом CLI приоритетнее MCP**; MCP ценен для `capture_game_view`/`capture_scene_view` и `job_*`. Сузить набор инструментов: `--tools`/`--exclude-tools`.
+
+## Импорт 3D-ассетов
+
+Правила и проверенные настройки FBX ↔ Unity (оси без Bake Axis Conversion, материалы URP Lit из манифеста, `UCX_` → MeshCollider, Humanoid) — gameforge:blender → `references/export.md`, готовые скрипты — `skills/blender/examples/export_unity/`.
+- Импортёр настраивай **до первого импорта** в `AssetPostprocessor.OnPreprocessModel` по префиксам `SM_` / `SK_` (`Assets/Editor/`).
+- Скриншот без Unity MCP: `Camera.Render()` в RenderTexture с `camera.scene = <тестовая сцена, открытая аддитивно>` и `ShaderUtil.allowAsyncCompilation = false` (иначе розовые материалы на снимке).
+- Импорт и создание URP-материалов может дописать `ProjectSettings/URPProjectSettings.asset` — перед коммитом покажи это изменение пользователю.
 
 ## Правила GameForge для Unity
 

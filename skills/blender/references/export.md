@@ -5,10 +5,11 @@
 - [ ] Масштаб: Unit Scale 1.0, метры; размеры объекта реальные
 - [ ] Apply Rotation & Scale (`bpy.ops.object.transform_apply(rotation=True, scale=True)`)
 - [ ] Пивот там, где он нужен в игре (низ-центр для пропсов, угол сетки для модулей, между стоп для персонажей)
-- [ ] Модификаторы применены (или экспорт с `use_mesh_modifiers=True`)
+- [ ] Экспорт из **отдельной коллекции экспортных копий** (`GF_EXPORT_<Asset>`: `bpy.data.meshes.new_from_object(ob.evaluated_get(depsgraph))`), а не применением модификаторов на рабочих объектах — исходник остаётся неразрушенным, текст (FONT) превращается в меш, отрицательный scale учитывается
 - [ ] Нормали наружу, нет n-gon’ов в деформируемых местах, нет дублей вершин
 - [ ] Один материал = один слот; неиспользуемые слоты удалены
-- [ ] UV без перекрытий там, где будет bake/lightmap (второй UV-канал под lightmap для статики в Unity/Unreal)
+- [ ] UV есть у всех мешей. Для **тайловых** материалов (стены, кровля, мостовая) — box-UV в метрах: `UV = координата / размер тайла материала`, тайлинг в движке = 1 (Smart UV сожмёт стену в 0–1 и растянет текстуру). Smart UV / ручная развёртка — только для уникальных текстур и бейка
+- [ ] Lightmap UV: для Unity проще и надёжнее `generateSecondaryUV = true` на импортёре, чем второй UV-канал из Blender; для Unreal — второй канал или Generate Lightmap UVs
 - [ ] LOD и коллизии названы по правилам движка (ниже)
 - [ ] .blend сохранён версией до экспорта
 
@@ -16,14 +17,32 @@
 
 `SM_` статический меш, `SK_` скелетный, `T_<Asset>_<Map>` текстуры (`_BC` base color, `_N` normal, `_ORM` или `_MS`), `M_` материал, `A_` анимация.
 
-## Unity
+## Unity (проверено: Unity 6000.6, URP, FBX)
 
-- Формат: **FBX** (`bpy.ops.export_scene.fbx`) — `apply_scale_options='FBX_SCALE_ALL'`, `axis_forward='-Z'`, `axis_up='Y'`, `apply_unit_scale=True`, `use_mesh_modifiers=True`, `bake_anim` только для анимаций. В импорте Unity — включить **Bake Axis Conversion**.
-- LOD: дочерние меши `<Name>_LOD0`, `_LOD1`, `_LOD2` → Unity создаёт LOD Group автоматически.
-- Коллизии: простые меши отдельно, в Unity — Box/Capsule/Mesh Collider (convex) на префабе.
-- Материалы URP Lit: Metallic + Smoothness в альфе metallic-карты (Smoothness = 1 − Roughness).
-- Персонажи: Rig → Humanoid, проверить Avatar mapping.
-- Кладём в `Assets/Art/<Category>/<Asset>/`; после экспорта — `unity recompile`/refresh, проверка в сцене через gameforge:engine-unity.
+**Экспорт FBX** (`bpy.ops.export_scene.fbx`):
+```python
+dict(use_selection=True, object_types={"MESH", "ARMATURE", "EMPTY"},
+     apply_scale_options="FBX_SCALE_ALL", axis_forward="-Z", axis_up="Y", apply_unit_scale=True,
+     use_mesh_modifiers=True, mesh_smooth_type="OFF", add_leaf_bones=False,
+     primary_bone_axis="Y", secondary_bone_axis="X", bake_anim=False,
+     path_mode="STRIP", embed_textures=False,          # текстуры кладём рядом: <Asset>/Textures/
+     bake_space_transform=not is_rig)                  # статика: True; риг: False
+```
+**Оси (проверено перебором 4 комбинаций):** в импортёре Unity **Bake Axis Conversion = OFF** (с ним модели разворачиваются на 180° и смотрят в −Z). Статика с `bake_space_transform=True` → корень (0,0,0), фасад в +Z. Риг с `bake_space_transform=False` → на узле арматуры 270° по X (норма для Blender-ригов), лицо в +Z, Humanoid валиден. Модель Blender «смотрит» в −Y.
+
+**Материалы — FBX переносит мало.** Доходят только текстура, подключённая **напрямую** Image → Base Color, и Normal Map. Теряются: тонировка через Mix/MixRGB, node groups (кожа MPFB, все составные шейдеры), Metallic, Emission, процедурные текстуры. Рабочий рецепт: Blender пишет манифест материалов (`gf_materials.json`: base map + tint, normal, metallic/roughness, alpha, emission), Unity-скрипт создаёт **URP Lit** и делает `ModelImporter.AddRemap` на них. MS-карта: R = metallic, A = 1 − roughness, PNG non-color, при назначенной карте `_Smoothness = 1`. После установки свойств URP-материала вызвать `LitShader.ValidateMaterial` (через reflection), иначе не выставятся ключевые слова (alpha clip, emission). Глаза/волосы/брови/ресницы MPFB: вход Alpha связан → alpha clip 0.5, двусторонние.
+
+**Импортёр** — настраивать **до первого импорта** в `AssetPostprocessor.OnPreprocessModel` по префиксам: `SM_` — `bakeAxisConversion=false`, `generateSecondaryUV=true`; `SK_` — плюс `animationType = Human`. Если у Humanoid-модели меняли оси/масштаб — сбросить `humanDescription = new HumanDescription()` + `autoGenerateAvatarMappingIfUnspecified = true`, иначе Unity держит старый скелет и сыплет «Avatar Rig Configuration mis-match».
+
+**LOD:** дочерние меши `<Name>_LOD0/_LOD1/_LOD2` → LOD Group создаётся сам. Для LOD2 — непрозрачный тёмный «оконный» материал вместо стекла с интерьером.
+
+**Коллизии:** `UCX_<Mesh>_NN` (выпуклая оболочка, `bmesh.ops.convex_hull`) в том же FBX. **Unity этот префикс не понимает** — нужен `AssetPostprocessor.OnPostprocessModel` или шаг сборки префаба: MeshCollider (convex) + удалить MeshRenderer/MeshFilter. LODGroup такие меши игнорирует. Персонажу — CapsuleCollider/CharacterController на префабе.
+
+**Проверка без Unity MCP** (через `unity command`/editor-скрипт): тестовая сцена открывается аддитивно (сцены пользователя не трогаем); скриншот — `Camera.Render()` в RenderTexture с `camera.scene = <тестовая сцена>` и `ShaderUtil.allowAsyncCompilation = false` (иначе розовые материалы на снимке); LOD — `LODGroup.ForceLOD(i)` по уровню на снимок; коллизии — `Physics.SyncTransforms()` + Raycast/CapsuleCast; рост скелетного меша — `SkinnedMeshRenderer.BakeMesh`, не `bounds`; `avatar.isValid && avatar.isHuman`, число сопоставленных костей, консоль без «Rig Error».
+
+**Готовые скрипты:** `../examples/export_unity/` — экспорт (экспортные копии, box-UV, LOD, UCX, подготовка MPFB, манифест материалов) и Unity-скрипты (импорт и материалы, префабы с коллайдерами, тестовая сцена, скриншоты, проверки).
+
+Кладём в `Assets/Art/<Category>/<Asset>/` (текстуры в `Textures/`); проверка в сцене — gameforge:engine-unity.
 
 ## Godot
 
