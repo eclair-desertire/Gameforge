@@ -46,6 +46,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 
 **Poly Haven (CC0 текстуры, HDRI)**: API отвечает 403 без заголовка User-Agent — ставь нейтральный (`-A "GameForge/1.0"`), без данных пользователя. Качай `curl -C - --retry 5` в фоне; файлы, загруженные в Blender недокачанными, потом `image.reload()`.
 
+**GIMP MCP**: `uvx gimp-mcp-plugin@<v> install-plugin` (сначала `--dry-run` — покажет папку), сервер с той же `<v>` (`claude mcp add --scope user gimp -- uvx gimp-mcp-plugin@<v>`), перезапуск GIMP → Tools → MCP → Start MCP Server. Не `@latest`: версии плагина и сервера разъедутся.
+
 **Большие загрузки** всегда в фоне, с докачкой (`curl -C -`) и проверкой архива (`unzip -t`, хеш, если источник его публикует).
 
 ## 4. Прописать MCP

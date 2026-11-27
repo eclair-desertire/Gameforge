@@ -26,6 +26,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task art-2d
 6. **Финиш**: `fx_post` — glow, shadow, grade (единая цветовая температура по всем ассетам), outline при необходимости; для 2D-света — `fx_normal_map`.
 7. **Проверка**: `get_state_snapshot` GIMP или `fx_view` — смотри целиком и в зуме на лица/детали; сравни рядом с соседними ассетами игры.
 
+## Практика GIMP MCP (проверено: gimp-mcp 0.6.0, GIMP 3.2.8)
+
+- Сначала `check_server` — покажет версии GIMP, плагина и сервера (должны совпадать).
+- Есть готовые: `new_canvas`, `create_layer`, `gradient_fill`, `fill_ellipse`, `duplicate_layer`, `rename_layer`, `apply_gaussian_blur`, `apply_drop_shadow` (тень — отдельным слоем), `add_text`, `list_fonts`, `list_layers`, `get_state_snapshot`, `save_xcf`, `export_image`.
+- Нет готовых: многоугольник/кривая-силуэт и выравнивание текста (`add_text` ставит левый верхний угол) — через `call_api` (выделение по точкам → заливка; позицию текста считать по его размерам).
+- Свечение: копия формы под ней + `apply_gaussian_blur` (радиус 30–50 px).
+- Порядок: `save_xcf` (исходник со слоями) → `export_image` с `flatten=false`; PNG выходит RGBA — для непрозрачного фона это не важно.
+- Новый MCP-сервер виден только в **новой** сессии Claude Code (или после `/mcp` → reconnect) — в текущей его инструментов не будет.
+
 ## Типовые задачи
 | Задача | Как |
 |--------|-----|

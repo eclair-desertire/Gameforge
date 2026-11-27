@@ -256,10 +256,10 @@ def c_gimp(servers):
     old = v and tuple(int(x) for x in v.split(".")[:2] if x.isdigit()) < (3, 2)
     add("gimp", "missing" if old else "ok", f"GIMP {v} — {app}" + (" — для MCP нужен 3.2+" if old else ""), "обновить GIMP до 3.2+ (gimp.org или brew upgrade --cask gimp) — делает пользователь" if old else "")
     plug = first("~/Library/Application Support/GIMP/3.*/plug-ins/*mcp*")
-    add("gimp", "ok" if plug else "missing", f"плагин GIMP MCP: {plug}" if plug else "плагин GIMP MCP не установлен", "" if plug else "uvx gimp-mcp-plugin@latest install-plugin → перезапустить GIMP")
+    add("gimp", "ok" if plug else "missing", f"плагин GIMP MCP: {plug}" if plug else "плагин GIMP MCP не установлен", "" if plug else "uvx gimp-mcp-plugin@<версия из mcp-templates/gimp.json> install-plugin → перезапустить GIMP")
     c_mcp(servers, "gimp", ("gimp",), "gimp.json")
     ok = port_open(int(os.environ.get("GIMP_MCP_PORT", 9877)))
-    add("gimp", "ok" if ok else "off", "сервер GIMP на :9877 " + ("отвечает" if ok else "не отвечает"), "" if ok else "GIMP → MCP → Start Server (или включить автозапуск в том же диалоге)")
+    add("gimp", "ok" if ok else "off", "сервер GIMP на :9877 " + ("отвечает" if ok else "не отвечает"), "" if ok else "GIMP → Tools → MCP → Start MCP Server (там же можно включить автозапуск)")
 
 
 def c_blockbench(servers):

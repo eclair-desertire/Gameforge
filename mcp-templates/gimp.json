@@ -1,10 +1,14 @@
 {
-  "_comment": "gimp-mcp/gimp-mcp (бывш. maorcc/gimp-mcp, GPL-3.0, ~80 инструментов: слои, выделения, фильтры, текст, get_state_snapshot для визуальной проверки). Нужно: GIMP 3.2+, uv. Плагин: `uvx gimp-mcp-plugin@latest install-plugin` → перезапуск GIMP → Tools/Filters → MCP → Start Server (порт 9877, можно автозапуск). Версии плагина и сервера должны совпадать (check_server подскажет).",
+  "_comment": "gimp-mcp/gimp-mcp (GPL-3.0, ~80 инструментов: слои, выделения, фильтры, текст, get_state_snapshot для визуальной проверки, call_api — любой вызов GIMP API). Нужно: GIMP 3.2+, uv. Версию ЗАКРЕПЛЯЙ одинаковой у плагина и сервера: `uvx gimp-mcp-plugin@<v> install-plugin` (кладёт один файл в ~/Library/Application Support/GIMP/3.2/plug-ins/) и сервер `gimp-mcp-plugin@<v>` — с @latest сервер обновится, а плагин в GIMP нет. Затем перезапуск GIMP → Tools → MCP → Start MCP Server (там же автозапуск). Слушает только localhost:9877 и выполняет присланный код — наружу не открывать. Проверено: 0.6.0 + GIMP 3.2.8.",
   "mcpServers": {
     "gimp": {
       "command": "uvx",
-      "args": ["gimp-mcp-plugin@latest"],
-      "env": { "GIMP_MCP_PORT": "9877" }
+      "args": [
+        "gimp-mcp-plugin@0.6.0"
+      ],
+      "env": {
+        "GIMP_MCP_PORT": "9877"
+      }
     }
   }
 }
