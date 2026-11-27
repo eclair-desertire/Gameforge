@@ -1,601 +1,547 @@
-"""GameForge music core: theory (scales, modes, roman-numeral chords, moods), part generators
-(chords with voice leading, bass, arpeggio, drums, motif-based melody, pads), explicit note
-notation, song model, Standard MIDI File writer/reader and a piano-roll preview image.
+"""GameForge music core: composition from a spec (genre + mood -> sections, chord timelines, parts),
+theme variants (re-orchestrate a melody in another genre/key/mode/meter), section slices for
+horizontal re-sequencing, stingers, Standard MIDI File writer/reader and a piano-roll preview.
 
 Times are in beats (quarter notes). Pitches are MIDI numbers (C4 = 60). Pure Python + Pillow.
+Modules: theory (scales, chords, meters), model (Note/Track/Song), drums, generators, genres, synth.
 """
 from __future__ import annotations
 
+import copy
 import math
 import random
 import re
 import struct
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-# ============================================================ theory
+import drums as D
+import generators as Gn
+import genres as GE
+import synth as S
+import theory as T
+from model import Note, Song, Track
 
-NOTE_IDX = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
-NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-MODES = {
-    "major": [0, 2, 4, 5, 7, 9, 11], "ionian": [0, 2, 4, 5, 7, 9, 11],
-    "dorian": [0, 2, 3, 5, 7, 9, 10], "phrygian": [0, 1, 3, 5, 7, 8, 10],
-    "lydian": [0, 2, 4, 6, 7, 9, 11], "mixolydian": [0, 2, 4, 5, 7, 9, 10],
-    "minor": [0, 2, 3, 5, 7, 8, 10], "aeolian": [0, 2, 3, 5, 7, 8, 10],
-    "locrian": [0, 1, 3, 5, 6, 8, 10],
-    "harmonic_minor": [0, 2, 3, 5, 7, 8, 11], "melodic_minor": [0, 2, 3, 5, 7, 9, 11],
+GM = {  # General MIDI programs (0-based)
+    "piano": 0, "bright_piano": 1, "electric_grand": 2, "honky_tonk": 3, "electric_piano": 4, "electric_piano2": 5,
+    "harpsichord": 6, "clavinet": 7, "celesta": 8, "glockenspiel": 9, "music_box": 10, "vibraphone": 11, "marimba": 12,
+    "xylophone": 13, "tubular_bells": 14, "dulcimer": 15, "organ": 16, "percussive_organ": 17, "rock_organ": 18,
+    "church_organ": 19, "reed_organ": 20, "accordion": 21, "harmonica": 22, "melodica": 22, "bandoneon": 23,
+    "nylon_guitar": 24, "acoustic_guitar": 25, "jazz_guitar": 26, "electric_guitar": 27, "muted_guitar": 28,
+    "overdrive_guitar": 29, "distortion_guitar": 30, "guitar_harmonics": 31, "acoustic_bass": 32, "fingered_bass": 33,
+    "electric_bass": 33, "picked_bass": 34, "fretless_bass": 35, "slap_bass": 36, "slap_bass2": 37, "synth_bass": 38,
+    "synth_bass2": 39, "violin": 40, "viola": 41, "cello": 42, "contrabass": 43, "tremolo_strings": 44, "pizzicato": 45,
+    "harp": 46, "timpani": 47, "strings": 48, "slow_strings": 49, "synth_strings": 50, "synth_strings2": 51, "choir": 52,
+    "voice_oohs": 53, "synth_voice": 54, "orchestra_hit": 55, "trumpet": 56, "trombone": 57, "tuba": 58,
+    "muted_trumpet": 59, "french_horn": 60, "brass": 61, "synth_brass": 62, "synth_brass2": 63, "soprano_sax": 64,
+    "alto_sax": 65, "tenor_sax": 66, "baritone_sax": 67, "oboe": 68, "english_horn": 69, "bassoon": 70, "clarinet": 71,
+    "piccolo": 72, "flute": 73, "recorder": 74, "pan_flute": 75, "blown_bottle": 76, "shakuhachi": 77, "whistle": 78,
+    "ocarina": 79, "square_wave": 80, "saw_wave": 81, "calliope": 82, "chiff_lead": 83, "charang": 84, "solo_voice": 85,
+    "fifths_lead": 86, "bass_lead": 87, "new_age_pad": 88, "warm_pad": 89, "polysynth": 90, "choir_pad": 91,
+    "bowed_pad": 92, "metallic_pad": 93, "halo_pad": 94, "sweep_pad": 95, "rain": 96, "soundtrack": 97, "crystal": 98,
+    "atmosphere": 99, "brightness": 100, "goblins": 101, "echoes": 102, "sci_fi": 103, "sitar": 104, "banjo": 105,
+    "shamisen": 106, "koto": 107, "kalimba": 108, "bagpipe": 109, "fiddle": 110, "shanai": 111, "tinkle_bell": 112,
+    "agogo": 113, "steel_drums": 114, "woodblock": 115, "taiko": 116, "melodic_tom": 117, "synth_drum": 118,
+    "reverse_cymbal": 119,
 }
-EXTRA_SCALES = {  # melody-only colour scales (not used to build diatonic chords)
-    "pentatonic_major": [0, 2, 4, 7, 9], "pentatonic_minor": [0, 3, 5, 7, 10],
-    "blues": [0, 3, 5, 6, 7, 10], "whole_tone": [0, 2, 4, 6, 8, 10],
-}
-
-QUALITIES = {
-    "maj": [0, 4, 7], "min": [0, 3, 7], "dim": [0, 3, 6], "aug": [0, 4, 8],
-    "sus2": [0, 2, 7], "sus4": [0, 5, 7], "5": [0, 7],
-    "7": [0, 4, 7, 10], "maj7": [0, 4, 7, 11], "m7": [0, 3, 7, 10], "m7b5": [0, 3, 6, 10],
-    "dim7": [0, 3, 6, 9], "mmaj7": [0, 3, 7, 11], "add9": [0, 4, 7, 14], "madd9": [0, 3, 7, 14],
-    "6": [0, 4, 7, 9], "m6": [0, 3, 7, 9], "9": [0, 4, 7, 10, 14], "maj9": [0, 4, 7, 11, 14], "m9": [0, 3, 7, 10, 14],
-}
-
-MOODS = {
-    # mood: mode, tempo range, progressions (roman, relative to the mode), instruments by role, drum style
-    "heroic": ("major", (112, 140), ["I V vi IV", "I bVII IV I", "I IV V IV"], {"lead": "french_horn", "pad": "strings", "bass": "contrabass", "color": "harp"}, "march"),
-    "adventure": ("mixolydian", (110, 132), ["I bVII IV I", "I IV bVII IV"], {"lead": "flute", "pad": "strings", "bass": "acoustic_bass", "color": "pizzicato"}, "pop"),
-    "calm": ("major", (72, 96), ["I vi IV V", "Imaj7 IVmaj7", "I iii IV I"], {"lead": "flute", "pad": "warm_pad", "bass": "acoustic_bass", "color": "piano"}, "none"),
-    "town": ("major", (88, 108), ["I IV I V", "I vi ii V", "IV V iii vi"], {"lead": "flute", "pad": "accordion", "bass": "acoustic_bass", "color": "acoustic_guitar"}, "light"),
-    "mystery": ("dorian", (70, 92), ["i IV i bVII", "i bIII IV i"], {"lead": "celesta", "pad": "warm_pad", "bass": "fretless_bass", "color": "harp"}, "none"),
-    "dungeon": ("phrygian", (60, 84), ["i bII i bVII", "i bVI bII i"], {"lead": "choir", "pad": "strings", "bass": "contrabass", "color": "harp"}, "sparse"),
-    "battle": ("harmonic_minor", (140, 172), ["i bVI bVII V", "i iv V i", "i bVI III V"], {"lead": "brass", "pad": "strings", "bass": "electric_bass", "color": "pizzicato"}, "rock"),
-    "boss": ("harmonic_minor", (150, 180), ["i bII i V", "i bVI iv V"], {"lead": "brass", "pad": "choir", "bass": "electric_bass", "color": "distortion_guitar"}, "rock"),
-    "sad": ("minor", (58, 76), ["i iv bVI V", "i bVI bIII bVII", "vi IV I V"], {"lead": "cello", "pad": "strings", "bass": "contrabass", "color": "piano"}, "none"),
-    "horror": ("locrian", (48, 66), ["i bII", "i bV"], {"lead": "choir", "pad": "warm_pad", "bass": "contrabass", "color": "music_box"}, "none"),
-    "chiptune": ("major", (130, 160), ["I V vi IV", "I IV V I", "vi IV I V"], {"lead": "square", "pad": "pulse25", "bass": "triangle", "color": "pulse12"}, "chip"),
-    "victory": ("major", (120, 140), ["I IV V I"], {"lead": "trumpet", "pad": "strings", "bass": "tuba", "color": "glockenspiel"}, "march"),
-    "game_over": ("minor", (60, 80), ["i iv i V"], {"lead": "piano", "pad": "strings", "bass": "contrabass", "color": "harp"}, "none"),
-    "lofi": ("dorian", (70, 88), ["im7 IV7", "IVmaj7 iiim7 iim7 Imaj7"], {"lead": "electric_piano", "pad": "warm_pad", "bass": "fingered_bass", "color": "vibraphone"}, "lofi"),
-    "electronic": ("minor", (118, 130), ["i bVI bIII bVII", "i bVII bVI bVII"], {"lead": "saw_lead", "pad": "warm_pad", "bass": "synth_bass", "color": "square_lead"}, "edm"),
-}
-
-GM = {  # common General MIDI programs (0-based)
-    "piano": 0, "bright_piano": 1, "electric_piano": 4, "harpsichord": 6, "clavinet": 7, "celesta": 8,
-    "glockenspiel": 9, "music_box": 10, "vibraphone": 11, "marimba": 12, "xylophone": 13, "tubular_bells": 14,
-    "organ": 19, "accordion": 21, "harmonica": 22, "nylon_guitar": 24, "acoustic_guitar": 25,
-    "electric_guitar": 27, "muted_guitar": 28, "overdrive_guitar": 29, "distortion_guitar": 30,
-    "acoustic_bass": 32, "fingered_bass": 33, "electric_bass": 33, "picked_bass": 34, "fretless_bass": 35, "slap_bass": 36,
-    "synth_bass": 38, "synth_bass2": 39, "violin": 40, "viola": 41, "cello": 42, "contrabass": 43,
-    "tremolo_strings": 44, "pizzicato": 45, "harp": 46, "timpani": 47, "strings": 48, "slow_strings": 49,
-    "synth_strings": 50, "choir": 52, "voice_oohs": 53, "orchestra_hit": 55, "trumpet": 56, "trombone": 57,
-    "tuba": 58, "french_horn": 60, "brass": 61, "synth_brass": 62, "soprano_sax": 64, "alto_sax": 65,
-    "tenor_sax": 66, "oboe": 68, "english_horn": 69, "bassoon": 70, "clarinet": 71, "piccolo": 72,
-    "flute": 73, "recorder": 74, "pan_flute": 75, "ocarina": 79, "square_lead": 80, "saw_lead": 81,
-    "calliope": 82, "chiff_lead": 83, "warm_pad": 89, "polysynth": 90, "choir_pad": 91, "bowed_pad": 92,
-    "halo_pad": 94, "sweep_pad": 95, "ice_rain": 96, "atmosphere": 99, "sitar": 104, "banjo": 105,
-    "shamisen": 106, "koto": 107, "kalimba": 108, "bagpipe": 109, "fiddle": 110, "steel_drums": 114,
-    "taiko": 116, "melodic_tom": 117, "synth_drum": 118,
-}
-CHIP_WAVES = {"square", "pulse25", "pulse12", "triangle", "saw", "sine", "noise"}
-
-DRUM = {"kick": 36, "rim": 37, "snare": 38, "clap": 39, "esnare": 40, "tom_lo": 45, "hat": 42, "pedal_hat": 44,
-        "tom_mid": 47, "open_hat": 46, "tom_hi": 50, "crash": 49, "ride": 51, "tamb": 54, "shaker": 70, "timpani": 47}
-
-DRUM_STYLES = {  # 16 steps per bar; x = hit, X = accent, o = ghost
-    "rock": {"kick": "x.......x.x.....", "snare": "....X.......X...", "hat": "x.x.x.x.x.x.x.x."},
-    "pop": {"kick": "x.....x.x.......", "snare": "....X.......X...", "hat": "x.x.x.x.x.x.x.x.", "shaker": "..x...x...x...x."},
-    "edm": {"kick": "x...x...x...x...", "clap": "....X.......X...", "hat": "..x...x...x...x.", "open_hat": "......x.......x."},
-    "breakbeat": {"kick": "x.........x.....", "snare": "....X..o.o..X...", "hat": "x.xxx.x.x.xxx.x."},
-    "lofi": {"kick": "x......x..x.....", "snare": "....x.......x..o", "hat": "x.x.x.xxx.x.x.x."},
-    "trap": {"kick": "x......x..x.....", "clap": "........X.......", "hat": "xxxxxxxxx.xxxxxx"},
-    "chip": {"kick": "x.......x.......", "snare": "....x.......x...", "hat": "..x...x...x...x."},
-    "march": {"snare": "x.oox.oox.oox.x.", "kick": "x.......x.......", "crash": "x..............."},
-    "light": {"kick": "x.......x.......", "rim": "....x.......x...", "shaker": "x.x.x.x.x.x.x.x."},
-    "sparse": {"kick": "x...............", "tom_lo": "........x.......", "timpani": "x.......x......."},
-    "none": {},
-}
+CHIP_WAVES = S.CHIP_WAVES
+CHIP_GM = {"square": 80, "pulse25": 80, "pulse12": 80, "triangle": 33, "saw": 81, "sine": 79, "noise": 118}
+DRUM_KIT_GM = {**D.KITS, "909": 24, "chip": 0, "lofi": 32, "taiko": 48, "acoustic": 0}
+ROLES = ("pad", "chords", "pulse", "bass", "arp", "ostinato", "power", "drone", "texture", "fanfare", "drums", "melody", "counter", "notes")
+ROLE_PAN = {"arp": 0.25, "counter": -0.3, "ostinato": -0.2, "texture": 0.35, "chords": -0.12, "fanfare": 0.2, "power": -0.15}
+ROLE_REVERB = {"drums": 0.12, "bass": 0.05, "drone": 0.4, "pad": 0.45, "melody": 0.32, "texture": 0.55, "counter": 0.35}
 
 
-def note_to_midi(s: str) -> int:
-    m = re.fullmatch(r"([A-Ga-g])([#b]*)(-?\d+)", s.strip())
-    if not m:
-        raise ValueError(f"bad note '{s}' (use C4, F#3, Bb2)")
-    n = NOTE_IDX[m.group(1).upper()] + m.group(2).count("#") - m.group(2).count("b")
-    return 12 * (int(m.group(3)) + 1) + n
+def instrument_ok(inst) -> None:
+    if isinstance(inst, int) or (isinstance(inst, str) and inst.isdigit()):
+        return
+    if inst in GM or inst in S.PATCHES or inst in CHIP_WAVES or inst == "kit":
+        return
+    raise ValueError(f"unknown instrument '{inst}'. GM: {sorted(GM)}; synth patches: {sorted(S.PATCHES)}; chip: {sorted(CHIP_WAVES)}; or a GM program 0-127")
 
 
-def midi_to_name(p: int) -> str:
-    return f"{NAMES[p % 12]}{p // 12 - 1}"
-
-
-def key_root(key: str) -> int:
-    m = re.fullmatch(r"([A-Ga-g])([#b]?)", key.strip())
-    if not m:
-        raise ValueError(f"bad key '{key}' (use C, F#, Bb)")
-    return (NOTE_IDX[m.group(1).upper()] + (1 if m.group(2) == "#" else -1 if m.group(2) == "b" else 0)) % 12
-
-
-def scale_pcs(key: str, mode: str) -> list[int]:
-    steps = MODES.get(mode) or EXTRA_SCALES.get(mode)
-    if steps is None:
-        raise ValueError(f"mode must be one of {sorted(MODES) + sorted(EXTRA_SCALES)}")
-    r = key_root(key)
-    return [(r + s) % 12 for s in steps]
-
-
-ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7}
-
-
-def parse_roman(sym: str, key: str, mode: str) -> tuple[int, list[int], str]:
-    """'i', 'bVII', 'V7', 'ii°', 'IVmaj7', 'sus4' ... -> (root pitch class, intervals, label)."""
-    m = re.fullmatch(r"([b#]?)([ivIV]+)(°|o|ø|\+)?(maj9|maj7|mmaj7|m7b5|m7|m9|m6|madd9|dim7|7|9|6|add9|sus2|sus4|5)?", sym)
-    if not m:
-        raise ValueError(f"bad chord '{sym}' (roman numerals: I ii iii IV V vi vii°, bVII, V7, IVmaj7, isus4)")
-    acc, num, mark, ext = m.groups()
-    deg = ROMAN.get(num.upper())
-    if deg is None:
-        raise ValueError(f"bad roman numeral '{num}'")
-    # convention: plain numerals are diatonic to the mode; numerals WITH an accidental are relative
-    # to the major scale (in D minor 'bVI' = Bb, 'bVII' = C, 'VI' = Bb as well)
-    steps = MODES["major"] if acc else MODES.get(mode, MODES["major"])
-    root = (key_root(key) + steps[deg - 1] + (-1 if acc == "b" else 1 if acc == "#" else 0)) % 12
-    upper = num.isupper()
-    if mark in ("°", "o"):
-        q = "dim7" if ext == "7" else "dim"
-    elif mark == "ø":
-        q = "m7b5"
-    elif mark == "+":
-        q = "aug"
-    elif ext in ("sus2", "sus4", "5", "add9", "maj7", "maj9", "mmaj7", "m7b5", "dim7", "madd9"):
-        q = ext if not (ext == "add9" and not upper) else "madd9"
-    elif ext in ("7", "9", "6"):
-        q = ext if upper else {"7": "m7", "9": "m9", "6": "m6"}[ext]
-    elif ext in ("m7", "m9", "m6"):
-        q = ext
-    else:
-        q = "maj" if upper else "min"
-    return root, QUALITIES[q], f"{NAMES[root]}{'' if q == 'maj' else 'm' if q == 'min' else q}"
-
-
-def progression(prog: str, key: str, mode: str) -> list[tuple[int, list[int], str]]:
-    return [parse_roman(s, key, mode) for s in prog.split()]
-
-
-# ============================================================ song model
-
-
-@dataclass
-class Note:
-    start: float
-    dur: float
-    pitch: int
-    vel: int = 90
-
-
-@dataclass
-class Track:
-    name: str
-    role: str
-    instrument: str | int = "piano"
-    notes: list[Note] = field(default_factory=list)
-    volume: float = 0.8      # 0..1
-    pan: float = 0.0         # -1..1
-    reverb: float = 0.3      # 0..1 send
-    layer: int = 1           # adaptive-music intensity layer
-    drums: bool = False
-
-    @property
-    def program(self) -> int:
-        if self.drums or self.instrument == "kit":
-            return 0
-        if isinstance(self.instrument, int):
-            return self.instrument
-        if self.instrument in CHIP_WAVES:
-            return {"square": 80, "pulse25": 80, "pulse12": 80, "triangle": 33, "saw": 81, "sine": 79, "noise": 118}[self.instrument]
-        if self.instrument not in GM:
-            raise ValueError(f"unknown instrument '{self.instrument}'. GM names: {sorted(GM)}; chip: {sorted(CHIP_WAVES)}; or a program number 0-127")
-        return GM[self.instrument]
-
-
-@dataclass
-class Song:
-    title: str
-    tempo: float
-    key: str
-    mode: str
-    beats_per_bar: int = 4
-    bars: int = 8
-    tracks: list[Track] = field(default_factory=list)
-    chords: list[tuple[float, float, str]] = field(default_factory=list)   # (start, dur, label) for preview
-    sections: list[tuple[float, str]] = field(default_factory=list)
-    loop: bool = True
-
-    @property
-    def length_beats(self) -> float:
-        return self.bars * self.beats_per_bar
-
-    @property
-    def seconds(self) -> float:
-        return self.length_beats * 60.0 / self.tempo
-
-    def summary(self) -> dict:
-        return {
-            "title": self.title, "tempo": self.tempo, "key": self.key, "mode": self.mode, "bars": self.bars,
-            "time": f"{self.beats_per_bar}/4", "seconds": round(self.seconds, 2), "loop": self.loop,
-            "tracks": [{"name": t.name, "role": t.role, "instrument": t.instrument, "notes": len(t.notes), "layer": t.layer,
-                        "range": [midi_to_name(min(n.pitch for n in t.notes)), midi_to_name(max(n.pitch for n in t.notes))] if t.notes and not t.drums else None}
-                       for t in self.tracks],
-            "chords": " | ".join(c[2] for c in self.chords[: 16]),
-        }
-
-
-# ============================================================ generators
-
-
-def _voice(root_pc: int, ivs: list[int], prev: list[int] | None, center: int, spread: bool) -> list[int]:
-    """Choose an inversion/octave close to the previous chord (smooth voice leading)."""
-    pcs = [(root_pc + i) % 12 for i in ivs]
-    cands = []
-    for inv in range(len(pcs)):
-        order = pcs[inv:] + pcs[:inv]
-        for base_oct in range(center // 12 - 2, center // 12 + 2):
-            v, last = [], None
-            for pc in order:
-                p = base_oct * 12 + pc
-                while last is not None and p <= last:
-                    p += 12
-                v.append(p)
-                last = p
-            if spread and len(v) >= 3 and v[0] - 12 >= 48:   # open the voicing, but stay above the bass (C3)
-                v = [v[0] - 12] + v[1:]
-            cands.append(v)
-    def cost(v):
-        c = abs(sum(v) / len(v) - center) * 0.6
-        if prev:
-            c += sum(min(abs(a - b) for b in prev) for a in v)
-        return c
-    return min(cands, key=cost)
-
-
-def gen_chords(chords, beats_per_chord, total_beats, octave=4, rhythm="sustain", spread=False, vel=72, seed=0):
-    rnd = random.Random(seed)
-    out, prev, t, i = [], None, 0.0, 0
-    center = 12 * (octave + 1) + 2   # a bit lower so pads/chords sit under the melody
-    pat = {"sustain": [(0, 1.0)], "halves": [(0, 0.5), (0.5, 0.5)], "stabs": [(0, 0.12), (0.375, 0.12), (0.625, 0.12)],
-           "pulse8": [(k / 8, 1 / 8) for k in range(8)], "offbeat": [(k / 8 + 1 / 16, 1 / 16) for k in range(8)],
-           "waltz": [(1 / 3, 1 / 3 * 0.9), (2 / 3, 1 / 3 * 0.9)]}.get(rhythm)
-    if pat is None:
-        raise ValueError("chord rhythm: sustain | halves | stabs | pulse8 | offbeat | waltz")
-    while t < total_beats - 1e-6:
-        root, ivs, label = chords[i % len(chords)]
-        v = _voice(root, ivs, prev, center, spread)
-        prev = v
-        d = min(beats_per_chord, total_beats - t)
-        for st, ln in pat:
-            for p in v:
-                out.append(Note(t + st * d, max(0.05, ln * d * 0.98), p, max(1, min(127, vel + rnd.randint(-6, 6)))))
-        t += beats_per_chord
-        i += 1
-    return out
-
-
-def gen_bass(chords, beats_per_chord, total_beats, octave=2, style="root", vel=96, seed=0, beats_per_bar=4):
-    rnd = random.Random(seed)
-    out, t, i = [], 0.0, 0
-    base = 12 * (octave + 1)
-    while t < total_beats - 1e-6:
-        root, ivs, _ = chords[i % len(chords)]
-        nxt = chords[(i + 1) % len(chords)][0]
-        r = base + root
-        fifth = r + 7 if 7 in ivs or ivs[-1] >= 7 else r + ivs[-1]
-        d = min(beats_per_chord, total_beats - t)
-        if style == "root":
-            seq = [(0, d, r)]
-        elif style == "root_fifth":
-            seq = [(k, 1, r if k % 2 == 0 else fifth) for k in range(int(d))]
-        elif style == "octave":
-            seq = [(k * 0.5, 0.45, r if k % 2 == 0 else r + 12) for k in range(int(d * 2))]
-        elif style == "pulse8":
-            seq = [(k * 0.5, 0.45, r) for k in range(int(d * 2))]
-        elif style == "syncopated":
-            seq = [(0, 0.75, r), (0.75, 0.75, r), (1.5, 0.5, fifth)] + ([(2.5, 0.5, r + 12), (3.0, 1.0, r)] if d >= 4 else [])
-        elif style == "walking":
-            tones = [r, r + ivs[1], fifth]
-            seq = [(k, 1, tones[k % 3]) for k in range(int(d) - 1)]
-            target = base + nxt
-            seq.append((int(d) - 1, 1, target - 1 if rnd.random() < 0.5 else target + 1))  # chromatic approach
-        elif style == "pedal":
-            seq = [(0, d, base + chords[0][0])]
-        else:
-            raise ValueError("bass style: root | root_fifth | octave | pulse8 | syncopated | walking | pedal")
-        for st, ln, p in seq:
-            if st < d:
-                out.append(Note(t + st, min(ln, d - st) * 0.95, p, vel + rnd.randint(-5, 5) + (6 if st == 0 else 0)))
-        t += beats_per_chord
-        i += 1
-    return out
-
-
-def gen_arp(chords, beats_per_chord, total_beats, octave=4, pattern="up", rate=0.5, span=1, vel=74, seed=0):
-    rnd = random.Random(seed)
-    out, t, i = [], 0.0, 0
-    while t < total_beats - 1e-6:
-        root, ivs, _ = chords[i % len(chords)]
-        base = 12 * (octave + 1) + root
-        tones = sorted({base + iv + 12 * o for o in range(span) for iv in ivs[:4]})
-        seq = {"up": tones, "down": tones[::-1], "updown": tones + tones[-2:0:-1], "random": tones}.get(pattern)
-        if seq is None:
-            raise ValueError("arp pattern: up | down | updown | random")
-        d = min(beats_per_chord, total_beats - t)
-        k = 0
-        while k * rate < d - 1e-6:
-            p = rnd.choice(tones) if pattern == "random" else seq[k % len(seq)]
-            out.append(Note(t + k * rate, rate * 0.9, p, vel + (10 if (k * rate) % 1 == 0 else 0) + rnd.randint(-4, 4)))
-            k += 1
-        t += beats_per_chord
-        i += 1
-    return out
-
-
-def gen_drums(style, bars, beats_per_bar=4, fill_every=4, vel=100, seed=0, humanize=True):
-    rnd = random.Random(seed)
-    pat = DRUM_STYLES.get(style)
-    if pat is None:
-        raise ValueError(f"drum style: {sorted(DRUM_STYLES)}")
-    steps = 4 * beats_per_bar
-    out = []
-    for b in range(bars):
-        fill = fill_every and (b + 1) % fill_every == 0 and style not in ("none", "sparse")
-        for inst, s in pat.items():
-            s = (s * 2)[:steps]
-            if fill and inst in ("snare", "clap", "hat", "open_hat"):
-                s = s[: steps - 4]   # leave the last beat to the fill
-            for k, ch in enumerate(s):
-                if ch == ".":
-                    continue
-                v = {"x": vel - 10, "X": vel + 8, "o": vel - 50}.get(ch, vel)
-                jitter = rnd.uniform(-0.012, 0.012) if humanize else 0
-                out.append(Note(max(0, b * beats_per_bar + k * 0.25 + jitter), 0.2, DRUM[inst], max(1, min(127, v + (rnd.randint(-8, 6) if humanize else 0)))))
-        if fill:
-            base = b * beats_per_bar + beats_per_bar - 1
-            for j, (inst, off) in enumerate((("snare", 0), ("snare", 0.25), ("tom_hi", 0.5), ("tom_lo", 0.75))):
-                out.append(Note(base + off, 0.2, DRUM[inst], min(127, vel - 10 + j * 5)))
-    if style in ("rock", "pop", "edm", "march", "breakbeat"):
-        out.append(Note(0, 0.5, DRUM["crash"], vel))
-    return out
-
-
-def gen_melody(chords, beats_per_chord, total_beats, key, mode, octave=5, contour="arch", density=0.6,
-               motif_bars=2, seed=0, beats_per_bar=4, vel=92, phrase_bars=4, scale_override=None):
-    """Period-based melody (how game themes are usually written): 4-bar phrases in pairs —
-    antecedent (question) ends on a long non-tonic chord tone, consequent (answer) ends on a long
-    tonic. Each 2-bar half is the motif or its variation; motion is mostly stepwise, leaps are
-    followed by a step back, strong beats land on chord tones, range stays within ~an octave."""
-    rnd = random.Random(seed)
-    pcs = scale_pcs(key, scale_override or mode)
-    tonic = key_root(key)
-    center = 12 * (octave + 1) + (tonic if tonic <= 7 else tonic - 12) + 7      # around the 5th of the key
-    lo, hi = center - 9, center + 9
-    pool = [p for p in range(lo, hi + 1) if p % 12 in pcs]
-
-    def chord_at(t):
-        return chords[int(t // beats_per_chord) % len(chords)]
-
-    def chord_pcs(t):
-        r, ivs, _ = chord_at(t)
-        return {(r + iv) % 12 for iv in ivs}
-
-    def nearest(p, allowed=None):
-        cand = [q for q in pool if allowed is None or q % 12 in allowed] or pool
-        return min(cand, key=lambda q: (abs(q - p), q))
-
-    # motif: rhythm covering motif_bars minus the final held note, stepwise shape
-    cells = [[1, 1], [0.5, 0.5, 1], [1.5, 0.5], [0.5, 0.5, 0.5, 0.5], [1, 0.5, 0.5], [0.75, 0.25, 1]]
-    w = [3, 3, 2, 1 + 3 * density, 2, 1 + density]
-    span = motif_bars * beats_per_bar - 2          # leave room for a 2-beat landing note
-    rhythm = []
-    while sum(rhythm) < span:
-        rhythm += rnd.choices(cells, w)[0]
-    while sum(rhythm) > span:
-        over = sum(rhythm) - span
-        if rhythm[-1] > over:
-            rhythm[-1] -= over
-        else:
-            rhythm.pop()
-    shape = [0]
-    for _ in rhythm[1:]:
-        st = rnd.choices([1, -1, 2, -2, 0, 3, -3], [5, 4, 2, 2, 1.5, 1, 0.7])[0]
-        if abs(shape[-1]) >= 2 and len(shape) > 1:   # after a leap, step back
-            st = -1 if shape[-1] > 0 else 1
-        shape.append(st)
-
-    def play_half(t0, start_pitch, steps, rh, end_kind, rising):
-        notes, t, idx = [], t0, pool.index(nearest(start_pitch))
-        for i, d in enumerate(rh):
-            if t >= total_beats - 1e-6:
-                break
-            stp = steps[i] if i < len(steps) else 0
-            if not rising:
-                stp = -stp if rnd.random() < 0.5 else stp
-            idx = max(0, min(len(pool) - 1, idx + stp))
-            p = pool[idx]
-            strong = abs(t - round(t)) < 1e-6 and int(round(t)) % (2 if beats_per_bar == 4 else beats_per_bar) == 0
-            if strong:
-                p = nearest(p, chord_pcs(t))
-                idx = pool.index(p)
-            notes.append(Note(t, min(d, total_beats - t) * 0.92, p, vel + (8 if strong else 0) + rnd.randint(-5, 4)))
-            t += d
-        # landing note (2 beats)
-        if t < total_beats - 1e-6:
-            last = notes[-1].pitch if notes else start_pitch
-            if end_kind == "tonic":
-                p = nearest(last, {tonic})
-            else:
-                allowed = chord_pcs(t) - {tonic} or chord_pcs(t)
-                p = nearest(last, allowed)
-            ln = min(2.0, total_beats - t)
-            notes.append(Note(t, ln * 0.96, p, vel + 4))
-            t += ln
-        return notes, (notes[-1].pitch if notes else start_pitch)
-
-    out, t, k = [], 0.0, 0
-    cur = nearest(center - 2, chord_pcs(0))
-    half = motif_bars * beats_per_bar
-    while t < total_beats - 1e-6:
-        phrase_idx = k // 2                     # which 4-bar phrase
-        in_answer = phrase_idx % 2 == 1         # antecedent / consequent
-        second_half = k % 2 == 1
-        steps = list(shape)
-        rh = list(rhythm)
-        if second_half:                         # variation: invert the shape, keep the rhythm
-            steps = [-s for s in steps]
-        if in_answer and not second_half:       # answer restates the motif a step higher
-            cur = nearest(cur + 2)
-        last_phrase = t + half >= total_beats - 1e-6
-        end_kind = "tonic" if (second_half and in_answer) or last_phrase else ("chord" if second_half else "chord")
-        rising = {"arch": not second_half, "rise": True, "fall": False, "wave": k % 2 == 0}.get(contour, True)
-        ns, cur = play_half(t, cur, steps, rh, end_kind, rising)
-        out += ns
-        t += half
-        k += 1
-    return out
-
-
-def parse_notes(text: str, default_vel: int = 90) -> list[Note]:
-    """'C4:1 E4:.5 r:.5 C4+E4+G4:2 D5:1@110' — pitch(es):beats[@velocity], r = rest."""
-    out, t = [], 0.0
-    for tok in text.split():
-        m = re.fullmatch(r"([^:]+):([\d.]+)(?:@(\d+))?", tok)
-        if not m:
-            raise ValueError(f"bad note token '{tok}' (format C4:1, r:.5, C4+E4+G4:2, D5:1@110)")
-        pitches, dur, v = m.group(1), float(m.group(2)), int(m.group(3) or default_vel)
-        if pitches.lower() != "r":
-            for p in pitches.split("+"):
-                out.append(Note(t, dur * 0.95, note_to_midi(p), v))
-        t += dur
-    return out
+def program_of(tr: Track) -> int:
+    if tr.drums:
+        return DRUM_KIT_GM.get(tr.kit, 0)
+    i = tr.instrument
+    if isinstance(i, int) or (isinstance(i, str) and i.isdigit()):
+        return int(i)
+    if i in S.PATCHES:
+        return S.PATCHES[i]["gm"]
+    if i in CHIP_WAVES:
+        return CHIP_GM[i]
+    if i in GM:
+        return GM[i]
+    instrument_ok(i)
+    return 0
 
 
 # ============================================================ compose
 
+FORM_DEFAULTS = {
+    "intro": dict(bars=4, layers=[1], intensity=0.6, letter="A"),
+    "break": dict(bars=4, layers=[1], intensity=0.5, letter="A"),
+    "build": dict(bars=4, layers=[1, 2], intensity=0.8, letter="B"),
+    "bridge": dict(letter="C"),
+    "outro": dict(bars=4, layers=[1, 2], intensity=0.7, letter="A"),
+}
+
+
+def _basics(spec: dict) -> dict:
+    mood_d, genre_d, mood, genre = GE.resolve(spec)
+    seed = int(spec.get("seed", 1))
+    mode = spec.get("mode") or mood_d["mode"]
+    if mode not in T.MODES and mode not in T.SCALES:
+        raise ValueError(f"mode/scale must be one of {sorted(T.MODES) + sorted(T.SCALES)}")
+    if mode in T.MODES:
+        chord_mode, mel_scale = mode, None
+    else:  # pentatonic / blues / whole tone ... -> diatonic chords from the parallel major/minor
+        chord_mode = "minor" if 3 in T.SCALES[mode] else "major"
+        mel_scale = mode
+    meter = spec.get("meter") or genre_d.get("meter", "4/4")
+    bpb, grp = T.meter(meter)
+    if spec.get("tempo"):
+        tempo = float(spec["tempo"])
+    elif spec.get("genre"):
+        lo, hi = genre_d["tempo"]
+        e = mood_d["energy"] if spec.get("mood") else 0.5
+        tempo = round(lo + (hi - lo) * e)
+    else:
+        tempo = round(sum(mood_d["tempo"]) / 2)
+    tempo = tempo * T.felt(meter)          # felt beats -> quarter-note BPM (internal)
+    return dict(mood_d=mood_d, genre_d=genre_d, mood=mood, genre=genre, seed=seed, mode=mode, chord_mode=chord_mode,
+                mel_scale=mel_scale, key=spec.get("key", "C"), meter=meter, bpb=bpb, grp=grp, tempo=tempo)
+
+
+def _sections(spec: dict, b: dict) -> list[dict]:
+    progs = b["mood_d"]["prog"][b["seed"] % len(b["mood_d"]["prog"])]
+    prog = {"A": spec.get("progression") or progs[0], "B": spec.get("progression_b") or progs[1]}
+    prog["C"] = spec.get("progression_c") or prog["B"]
+    sb = int(spec.get("section_bars", 8))
+    out = []
+    if spec.get("sections"):
+        raw = [dict(s) for s in spec["sections"]]
+    elif spec.get("form"):
+        raw = []
+        for tok in str(spec["form"]).replace(",", " ").split():
+            lift = tok.endswith("+")
+            nm = tok.rstrip("+")
+            d = dict(name=tok)
+            d.update(FORM_DEFAULTS.get(nm.lower(), {}))
+            if nm.upper() in ("A", "B", "C"):
+                d["letter"] = nm.upper()
+            if nm.upper() == "C" or nm.lower() == "bridge":
+                d.setdefault("transpose", 5)
+            if lift:
+                d["transpose"] = d.get("transpose", 0) + 2
+            raw.append(d)
+    else:
+        bars = int(spec.get("bars", 16 if b["bpb"] >= 3 else 32))
+        raw = [dict(name="A", bars=bars // 2), dict(name="B", bars=bars - bars // 2)] if bars >= 16 and bars % 2 == 0 else [dict(name="A", bars=bars)]
+    for d in raw:
+        nm = str(d.get("name", "A"))
+        letter = d.get("letter") or (nm[0].upper() if nm[:1].upper() in "ABC" else "A")
+        d.setdefault("bars", sb)
+        key = d.get("key") or T.transpose_key(b["key"], int(d.get("transpose", 0)), b["chord_mode"])
+        out.append(dict(name=nm, bars=int(d["bars"]), letter=letter, key=key, progression=d.get("progression") or prog[letter],
+                        tempo=d.get("tempo"), layers=d.get("layers"), mute=d.get("mute", []), intensity=float(d.get("intensity", 1.0)),
+                        drums=d.get("drums"), chord_bars=float(d.get("chord_bars", spec.get("chord_bars", 2 if b["meter"] == "2/4" else 1)))))
+    return out
+
+
+def _track_specs(spec: dict, b: dict) -> list[dict]:
+    if spec.get("tracks"):
+        tmpl = [dict(t) for t in spec["tracks"]]
+    else:
+        g = b["genre_d"] or GE.GENRES["orchestral"]
+        tmpl = [dict(t) for t in g["tracks"]]
+    tmpl += [dict(t) for t in spec.get("add_tracks", [])]
+    inst_over = spec.get("instruments", {})
+    drop = set(spec.get("drop_roles", []))
+    names: dict[str, int] = {}
+    out = []
+    for t in tmpl:
+        role = t.get("role", "notes")
+        if role not in ROLES:
+            raise ValueError(f"track role: {ROLES}")
+        if role in drop or t.get("name") in drop:
+            continue
+        if role == "drums" and (t.get("style") == "none"):
+            continue
+        nm = t.get("name") or role.capitalize()
+        names[nm] = names.get(nm, 0) + 1
+        if names[nm] > 1:
+            nm = f"{nm}{names[nm]}"
+        t["name"] = nm
+        if nm in inst_over:
+            t["instrument"] = inst_over[nm]
+        elif role in inst_over:
+            t["instrument"] = inst_over[role]
+        if role != "drums":
+            t.setdefault("instrument", "piano")
+            instrument_ok(t["instrument"])
+        if b["genre_d"].get("engine") and "engine" not in t:
+            t["engine"] = b["genre_d"]["engine"]
+        if spec.get("engine") and "engine" not in t:
+            t["engine"] = spec["engine"]
+        out.append(t)
+    return out
+
+
+def _theme_map(notes: list[Note], src_key, src_mode, src_bpb, dst_key, dst_mode, dst_bpb, center: int) -> list[Note]:
+    """Map a melody into another key/mode (by scale degree) and meter (proportional within the bar)."""
+    ss = T.MODES.get(src_mode, T.MODES["major"])
+    ds = T.MODES.get(dst_mode, T.MODES["major"])
+    sr, dr = T.key_root(src_key), T.key_root(dst_key)
+    shift = dr - sr
+    if shift > 6:
+        shift -= 12
+    if shift < -6:
+        shift += 12
+    out = []
+    for n in notes:
+        rel = n.pitch - sr
+        octv, pc = divmod(rel, 12)
+        deg = max(i for i, s in enumerate(ss) if s <= pc)
+        off = pc - ss[deg]
+        p = sr + shift + 12 * octv + ds[deg] + off
+        bar, pos = divmod(n.start, src_bpb)
+        st = bar * dst_bpb + pos * dst_bpb / src_bpb
+        st = round(st * 4) / 4
+        out.append(Note(st, max(0.12, n.dur * dst_bpb / src_bpb), p, n.vel))
+    if out:
+        mean = sum(n.pitch for n in out) / len(out)
+        k = round((center - mean) / 12)
+        for n in out:
+            n.pitch += 12 * k
+    out.sort(key=lambda n: n.start)
+    ded = []
+    for n in out:
+        if ded and abs(ded[-1].start - n.start) < 1e-6:
+            continue
+        if ded and ded[-1].start + ded[-1].dur > n.start:
+            ded[-1].dur = max(0.1, n.start - ded[-1].start)
+        ded.append(n)
+    return ded
+
 
 def compose(spec: dict) -> Song:
-    title = spec.get("title", "Theme")
-    mood = spec.get("mood")
-    md = MOODS.get(mood) if mood else None
-    if mood and md is None:
-        raise ValueError(f"mood: {sorted(MOODS)}")
-    mode = spec.get("mode") or (md[0] if md else "major")
-    key = spec.get("key", "C")
-    tempo = float(spec.get("tempo") or (sum(md[1]) / 2 if md else 110))
-    bpb = int(spec.get("beats_per_bar", 4))
-    bars = int(spec.get("bars", 8))
-    seed = int(spec.get("seed", 1))
-    prog = spec.get("progression") or (md[2][seed % len(md[2])] if md else "I V vi IV")
-    chord_bars = float(spec.get("chord_bars", 1))
-    bpc = chord_bars * bpb
-    song = Song(title, tempo, key, mode, bpb, bars, loop=bool(spec.get("loop", True)))
-    total = bars * bpb
+    b = _basics(spec)
+    key, meter, bpb = b["key"], b["meter"], b["bpb"]
+    sections = _sections(spec, b)
+    tspecs = _track_specs(spec, b)
+    gd = b["genre_d"]
+    total_bars = sum(s["bars"] for s in sections)
+    song = Song(spec.get("title", "Theme"), b["tempo"], key, b["mode"], meter, total_bars, loop=bool(spec.get("loop", True)),
+                genre=b["genre"] or "", reverb=spec.get("reverb") or gd.get("reverb", "hall"),
+                master={**gd.get("master", {}), **spec.get("master", {})}, spec=copy.deepcopy(spec))
+    if song.reverb not in S.SPACES:
+        raise ValueError(f"reverb: {sorted(S.SPACES)}")
+    seed = b["seed"]
+    motif = Gn.parse_notes(spec["motif"]) if spec.get("motif") else None
+    theme = spec.get("_theme")
 
-    sections = spec.get("sections") or [{"name": "A", "bars": bars}]
-    if sum(int(s["bars"]) for s in sections) != bars:
-        raise ValueError("sum of section bars must equal `bars`")
-    tracks_spec = spec.get("tracks")
-    if not tracks_spec:
-        inst = md[3] if md else {"lead": "flute", "pad": "warm_pad", "bass": "acoustic_bass", "color": "harp"}
-        chip = inst["lead"] in CHIP_WAVES
-        tracks_spec = [{"name": "Pad", "role": "pad", "instrument": inst["pad"], "layer": 1, "volume": 0.55},
-                       {"name": "Bass", "role": "bass", "style": "octave" if chip else "root_fifth", "instrument": inst["bass"], "layer": 1, "volume": 0.65},
-                       {"name": "Arp", "role": "arp", "instrument": inst["color"], "pattern": "updown", "rate": 0.25 if chip else 0.5, "layer": 2, "volume": 0.55},
-                       {"name": "Drums", "role": "drums", "style": md[4] if md else "pop", "layer": 2, "volume": 0.75},
-                       {"name": "Lead", "role": "melody", "instrument": inst["lead"], "layer": 3}]
-        if (md and md[4] == "none"):
-            tracks_spec = [t for t in tracks_spec if t["role"] != "drums"]
+    # tracks
+    tracks = []
+    for k, t in enumerate(tspecs):
+        role = t["role"]
+        drum_style = t.get("style") or gd.get("drums", "pop")
+        kit = t.get("kit") or (D.STYLES[drum_style]["kit"] if role == "drums" and drum_style in D.STYLES else "standard")
+        fx = dict(t.get("fx", {}))
+        if t.get("gated"):
+            fx["gated"] = True
+        tr = Track(t["name"], role, t.get("instrument", "kit" if role == "drums" else "piano"),
+                   volume=float(t.get("volume", 0.8)), pan=float(t.get("pan", ROLE_PAN.get(role, 0.0))),
+                   reverb=float(t.get("reverb", ROLE_REVERB.get(role, 0.3))), layer=int(t.get("layer", 1)), drums=role == "drums",
+                   engine=t.get("engine", "auto"), kit=kit, duck=float(t.get("duck", 0.0)),
+                   params={**{k2: v for k2, v in t.items() if k2 not in ("name", "role", "instrument", "volume", "pan", "reverb", "layer", "engine", "kit", "duck", "fx")}, "fx": fx})
+        tracks.append(tr)
+    order = sorted(range(len(tracks)), key=lambda i: 0 if tracks[i].role == "melody" else 1)
 
-    sec_start = 0
-    sec_chords = []
-    for s in sections:
-        sp = s.get("progression", prog)
-        ch = progression(sp, key, mode)
-        sec_chords.append((sec_start * bpb, int(s["bars"]) * bpb, ch, s.get("name", "")))
-        song.sections.append((sec_start * bpb, s.get("name", "")))
-        sec_start += int(s["bars"])
-    for st, ln, ch, _ in sec_chords:
-        t = 0.0
-        i = 0
-        while t < ln - 1e-6:
-            song.chords.append((st + t, min(bpc, ln - t), ch[i % len(ch)][2]))
-            t += bpc
-            i += 1
-
-    for k, ts in enumerate(tracks_spec):
-        role = ts.get("role", "notes")
-        tr = Track(ts.get("name", f"T{k}"), role, ts.get("instrument", "kit" if role == "drums" else "piano"), volume=float(ts.get("volume", 0.8)),
-                   pan=float(ts.get("pan", 0.0)), reverb=float(ts.get("reverb", 0.3)), layer=int(ts.get("layer", 1)), drums=role == "drums")
-        tseed = seed * 31 + k
-        for si, (st, ln, ch, _) in enumerate(sec_chords):
-            sbars = int(ln // bpb)
-            if role == "chords" or role == "pad":
-                ns = gen_chords(ch, bpc, ln, int(ts.get("octave", 4)), ts.get("rhythm", "sustain" if role == "pad" else "halves"),
-                                spread=role == "pad" or ts.get("spread", False), vel=int(ts.get("velocity", 66 if role == "pad" else 76)), seed=tseed)
+    pos = 0.0
+    tempo_map = [(0.0, b["tempo"])]
+    for si, sec in enumerate(sections):
+        s0, ln = pos, sec["bars"] * bpb
+        song.sections.append((s0, sec["name"], sec["key"], sec["bars"]))
+        if sec["tempo"]:
+            tempo_map.append((s0, float(sec["tempo"]) * T.felt(meter)))
+        elif si > 0 and tempo_map[-1][1] != b["tempo"]:
+            tempo_map.append((s0, b["tempo"]))
+        tl = T.timeline(sec["progression"], sec["key"], b["chord_mode"], s0, ln, bpb, sec["chord_bars"])
+        song.chords += tl
+        ctx = dict(key=sec["key"], mode=b["chord_mode"], meter=meter, bpb=bpb, grp=b["grp"])
+        inten = sec["intensity"]
+        mel_notes: list[Note] = []
+        letter_seed = {"A": 0, "B": 1, "C": 2}.get(sec["letter"], 3)
+        for k in order:
+            tr = tracks[k]
+            p = tr.params
+            if sec["layers"] and tr.layer not in sec["layers"]:
+                continue
+            if tr.name in sec["mute"] or tr.role in sec["mute"]:
+                continue
+            rng = random.Random(seed * 1009 + k * 31 + letter_seed * 7)
+            sp = dict(p, instrument=tr.instrument)
+            if "velocity" in p:
+                sp["velocity"] = int(p["velocity"] * (0.7 + 0.3 * inten))
+            role = tr.role
+            if role in ("pad", "chords", "pulse"):
+                sp.setdefault("rhythm", {"pad": "sustain", "chords": "halves", "pulse": "pulse8"}[role])
+                sp.setdefault("velocity", int((64 if role == "pad" else 74) * (0.7 + 0.3 * inten)))
+                ns = Gn.gen_chords(tl, s0, s0 + ln, ctx, sp, rng)
             elif role == "bass":
-                ns = gen_bass(ch, bpc, ln, int(ts.get("octave", 2)), ts.get("style", "root"), int(ts.get("velocity", 96)), tseed, bpb)
+                sp.setdefault("velocity", int(96 * (0.75 + 0.25 * inten)))
+                ns = Gn.gen_bass(tl, s0, s0 + ln, ctx, sp, rng)
             elif role == "arp":
-                ns = gen_arp(ch, bpc, ln, int(ts.get("octave", 4)), ts.get("pattern", "up"), float(ts.get("rate", 0.5)), int(ts.get("span", 1)), int(ts.get("velocity", 72)), tseed)
+                sp.setdefault("velocity", int(72 * (0.7 + 0.3 * inten)))
+                ns = Gn.gen_arp(tl, s0, s0 + ln, ctx, sp, rng)
+            elif role == "ostinato":
+                ns = Gn.gen_ostinato(tl, s0, s0 + ln, ctx, sp, rng)
+            elif role == "power":
+                ns = Gn.gen_power(tl, s0, s0 + ln, ctx, sp, rng)
+            elif role == "drone":
+                ns = Gn.gen_drone(tl, s0, s0 + ln, ctx, sp, rng)
+            elif role == "texture":
+                ns = Gn.gen_texture(tl, s0, s0 + ln, ctx, sp, rng)
+            elif role == "fanfare":
+                ns = Gn.gen_fanfare(tl, s0, s0 + ln, ctx, sp, rng)
             elif role == "drums":
-                ns = gen_drums(ts.get("style", "pop"), sbars, bpb, int(ts.get("fill_every", 4)), int(ts.get("velocity", 100)), tseed)
+                style = sec["drums"] or p.get("style") or gd.get("drums", "pop")
+                ns = D.gen_drums(style, s0, sec["bars"], meter, rng, int(p.get("velocity", 100)), int(p.get("fill_every", 4)),
+                                 inten, crash_on_start=si == 0 or sec["letter"] != sections[si - 1]["letter"])
             elif role == "melody":
-                ns = gen_melody(ch, bpc, ln, key, mode, int(ts.get("octave", 5)), ts.get("contour", "arch"), float(ts.get("density", 0.6)),
-                                int(ts.get("motif_bars", 2)), tseed + si * 7, bpb, int(ts.get("velocity", 92)), scale_override=ts.get("scale"))
+                if theme is not None and k == next(i for i in order if tracks[i].role == "melody"):
+                    ns = [Note(n.start, n.dur, n.pitch, n.vel) for n in theme if s0 - 1e-6 <= n.start < s0 + ln]
+                else:
+                    sp.setdefault("contour", b["mood_d"].get("contour", "arch"))
+                    if b["mel_scale"] and "scale" not in sp:
+                        sp["scale"] = b["mel_scale"]
+                    mot = None
+                    if motif:
+                        tr_semi = (T.key_root(sec["key"]) - T.key_root(key)) % 12
+                        tr_semi = tr_semi - 12 if tr_semi > 6 else tr_semi
+                        mot = [Note(n.start, n.dur, n.pitch + tr_semi, n.vel) for n in motif]
+                    sp.setdefault("velocity", int(92 * (0.8 + 0.2 * inten)))
+                    ns = Gn.gen_melody(tl, s0, s0 + ln, ctx, sp, rng, motif=mot)
+                mel_notes += ns
+            elif role == "counter":
+                ns = Gn.gen_counter(tl, s0, s0 + ln, ctx, sp, rng, mel_notes)
             elif role == "notes":
-                ns = parse_notes(ts.get("notes", ""), int(ts.get("velocity", 90))) if si == 0 else []
-                st = 0
+                txt = p.get("notes", "")
+                if p.get("repeat"):
+                    one = Gn.parse_notes(txt, int(p.get("velocity", 90)))
+                    span = max((n.start + n.dur for n in one), default=bpb)
+                    span = math.ceil(span / bpb - 1e-6) * bpb
+                    ns, t0 = [], s0
+                    while t0 < s0 + ln - 1e-6:
+                        ns += [Note(n.start + t0, n.dur, n.pitch, n.vel) for n in one if n.start + t0 < s0 + ln]
+                        t0 += span
+                else:
+                    ns = Gn.parse_notes(txt, int(p.get("velocity", 90)), offset=0.0) if si == 0 else []
             else:
-                raise ValueError("track role: pad | chords | bass | arp | drums | melody | notes")
-            for n in ns:
-                n.start += st
-            tr.notes += [n for n in ns if n.start < total - 1e-6]
-        song.tracks.append(tr)
+                ns = []
+            tr.notes += ns
+        pos += ln
+    song.tempo_map = tempo_map if len(tempo_map) > 1 else []
+
+    # feel: swing + humanize
+    dstyle = next((t.params.get("style") for t in tracks if t.drums), gd.get("drums", ""))
+    dst = D.STYLES.get(dstyle or "", {})
+    swing = float(spec.get("swing", gd.get("swing", dst.get("swing", 0.0))))
+    unit = float(spec.get("swing_unit", 0.25 if dstyle in ("lofi", "boom_bap") else 0.5))
+    chip = all(t.engine == "chip" or t.instrument in CHIP_WAVES or t.drums for t in tracks)
+    hum = spec.get("humanize", 0.0 if chip else 1.0)
+    hr = random.Random(seed + 99)
+    for tr in tracks:
+        T.apply_swing(tr.notes, swing, unit)
+        if hum:
+            T.humanize(tr.notes, hr, timing=0.006 * float(hum) * (0.6 if tr.drums else 1.0), velocity=int(4 * float(hum)))
+    total = song.length_beats
+    for tr in tracks:
+        tr.notes = tidy([n for n in tr.notes if n.start < total - 1e-6])
+
     if spec.get("ending") == "cadence":
-        # final bar: tonic chord hit on every pitched track, song stops (no loop)
         song.loop = False
-        tonic = progression("I" if mode in ("major", "lydian", "mixolydian") else "i", key, mode)[0]
+        last_key = sections[-1]["key"]
+        r, ivs, lab = T.parse_roman("I" if 4 in T.MODES.get(b["chord_mode"], [4]) else "i", last_key, b["chord_mode"])
         song.bars += 1
         end = total
-        for tr in song.tracks:
+        for tr in tracks:
             if tr.drums:
-                tr.notes.append(Note(end, 1.0, DRUM["crash"], 110))
-                tr.notes.append(Note(end, 1.0, DRUM["kick"], 110))
+                tr.notes += [Note(end, 1.0, D.GM_DRUM["crash"], 110), Note(end, 1.0, D.GM_DRUM["kick"], 110)]
             elif tr.notes:
                 ref = sorted(n.pitch for n in tr.notes)[len(tr.notes) // 2]
-                v = _voice(tonic[0], tonic[1], None, ref, False)
-                for p in (v if tr.role in ("pad", "chords", "arp") else [min(v, key=lambda q: abs(q - ref))]):
-                    tr.notes.append(Note(end, bpb * 0.95, p, 96))
-        song.chords.append((end, bpb, tonic[2]))
+                v = Gn.voice(r, ivs, None, ref, False, floor=24)
+                for q in (v if tr.role in ("pad", "chords", "arp", "pulse", "power") else [min(v, key=lambda x: abs(x - ref))]):
+                    tr.notes.append(Note(end, bpb * 0.95, q, 96))
+        song.chords.append(T.Chord(end, bpb, r, ivs, lab))
+    song.tracks = tracks
     return song
 
 
-def stinger(kind: str, key: str = "C", tempo: float = 120, instrument: str = "brass", seed: int = 1) -> Song:
-    """Short musical cues for game events (victory, defeat, item, level_up, discovery, danger)."""
-    r = 12 * 5 + key_root(key)
-    shapes = {
-        "victory": "{0}:.5 {4}:.5 {7}:.5 {12}:1.5 {7}+{12}+{16}:2",
-        "level_up": "{0}:.25 {4}:.25 {7}:.25 {12}:.25 {16}:.25 {19}:.25 {24}:1.5",
-        "item": "{12}:.25 {16}:.25 {19}:.25 {24}:1",
-        "discovery": "{0}+{7}:1 {2}+{9}:1 {4}+{11}+{14}:2",
-        "defeat": "{7}:1 {6}:1 {5}:1 {0}+{3}+{7}:3",
-        "danger": "{0}+{1}:.5 r:.25 {0}+{1}:.5 r:.25 {0}+{6}:2",
-        "secret": "{19}:.25 {18}:.25 {15}:.25 {9}:.25 {8}:.25 {16}:.25 {20}:.25 {24}:1",
-    }
-    if kind not in shapes:
-        raise ValueError(f"stinger: {sorted(shapes)}")
-    txt = shapes[kind]
-    txt = re.sub(r"\{(\d+)\}", lambda m: midi_to_name(r + int(m.group(1))), txt)
-    notes = parse_notes(txt, 100)
+def tidy(notes: list[Note]) -> list[Note]:
+    """Sort; drop duplicates; trim same-pitch overlaps (a note-on before the previous note-off on the
+    same key would cut notes short in MIDI players)."""
+    notes = sorted(notes, key=lambda n: (n.start, n.pitch))
+    last: dict[int, Note] = {}
+    out = []
+    for n in notes:
+        p = last.get(n.pitch)
+        if p is not None:
+            if abs(p.start - n.start) < 1e-3:
+                p.vel = max(p.vel, n.vel)
+                p.dur = max(p.dur, n.dur)
+                continue
+            if p.start + p.dur > n.start - 0.01:
+                p.dur = max(0.02, n.start - p.start - 0.01)
+        last[n.pitch] = n
+        out.append(n)
+    return out
+
+
+def variant(src: Song, changes: dict) -> Song:
+    """Same theme, new arrangement: the source melody is mapped into the new key/mode/meter and the
+    new genre's (or given) tracks are generated around it with the same harmony and form."""
+    spec = copy.deepcopy(src.spec) if src.spec else {"bars": src.bars, "key": src.key, "mode": src.mode}
+    for k in ("tracks", "add_tracks", "instruments", "_theme", "drop_roles", "engine"):
+        if k not in changes:
+            spec.pop(k, None)
+    if "genre" in changes:
+        for k in ("meter", "tempo", "swing", "reverb", "master"):
+            if k not in changes:
+                spec.pop(k, None)
+    if "mood" in changes and "mode" not in changes:
+        spec.pop("mode", None)
+    keep = changes.pop("keep_melody", True) if isinstance(changes, dict) else True
+    spec.update({k: v for k, v in changes.items() if v is not None})
+    for k, v in changes.items():
+        if v is None:
+            spec.pop(k, None)
+    spec["title"] = changes.get("title") or f"{src.title} ({spec.get('genre') or spec.get('mood') or 'variant'})"
+    if keep:
+        mel = next((t for t in src.tracks if t.role == "melody" and t.notes), None)
+        if mel is None:  # e.g. a loaded MIDI: the highest pitched part is the tune
+            cands = [t for t in src.tracks if not t.drums and t.notes]
+            mel = max(cands, key=lambda t: sum(n.pitch for n in t.notes) / len(t.notes)) if cands else None
+        if mel:
+            b = _basics(spec)
+            oc = int(next((t.get("octave", 5) for t in _track_specs(spec, b) if t["role"] == "melody"), 5))
+            kr = T.key_root(b["key"])
+            center = 12 * (oc + 1) + (kr if kr <= 7 else kr - 12) + 4      # same register rule as gen_melody
+            src_mode = src.mode if src.mode in T.MODES else ("minor" if 3 in T.SCALES.get(src.mode, [4]) else "major")
+            theme = _theme_map(mel.notes, src.key, src_mode, src.bpb, b["key"], b["chord_mode"], b["bpb"], center)
+            if theme and any(k in changes for k in ("bars", "form", "sections")):
+                # new structure: start the tune on bar 1 (drop the source's melody-less intro)
+                sh = math.floor(theme[0].start / b["bpb"] + 1e-6) * b["bpb"]
+                theme = [Note(n.start - sh, n.dur, n.pitch, n.vel) for n in theme]
+            spec["_theme"] = theme
+    song = compose(spec)
+    song.spec.pop("_theme", None)
+    song.spec["_theme_from"] = src.title
+    if keep and spec.get("_theme") is not None:
+        song.spec["_theme"] = spec["_theme"]
+    return song
+
+
+def slice_song(song: Song, start_beat: float, bars: int, title: str) -> Song:
+    """One section as its own song (for per-section loops / horizontal re-sequencing)."""
+    end = start_beat + bars * song.bpb
+    tm = [(max(0.0, b - start_beat), bpm) for b, bpm in (song.tempo_map or [(0.0, song.tempo)]) if b < end - 1e-6]
+    # tempo in effect at the start
+    cur = song.tempo
+    for b, bpm in (song.tempo_map or []):
+        if b <= start_beat + 1e-6:
+            cur = bpm
+    tm = [(0.0, cur)] + [(b, bpm) for b, bpm in tm if b > 1e-6]
+    s = Song(title, cur, song.key, song.mode, song.meter, bars, loop=True, genre=song.genre, reverb=song.reverb, master=dict(song.master))
+    s.tempo_map = tm if len(tm) > 1 else []
+    s.chords = [T.Chord(c.start - start_beat, c.dur, c.root, c.ivs, c.label) for c in song.chords if start_beat - 1e-6 <= c.start < end]
+    for tr in song.tracks:
+        t2 = copy.copy(tr)
+        t2.notes = [Note(n.start - start_beat, n.dur, n.pitch, n.vel) for n in tr.notes if start_beat - 1e-3 <= n.start < end - 1e-6]
+        s.tracks.append(t2)
+    return s
+
+
+# ============================================================ stingers
+
+STINGERS = {  # semitones from the tonic (octave 5); last chord is held by the backing; mood for colour
+    "victory": ("{0}:.5 {4}:.5 {7}:.5 {12}:1.5 {7}+{12}+{16}:2.5", "maj", "big"),
+    "level_up": ("{0}:.25 {4}:.25 {7}:.25 {12}:.25 {16}:.25 {19}:.25 {12}+{16}+{24}:1.5", "maj", "hit"),
+    "quest_complete": ("{7}:.5 {9}:.5 {11}:.5 {12}:1 r:.25 {7}+{12}+{16}:2.5", "maj", "big"),
+    "achievement": ("{12}:.25 {19}:.25 {24}:.5 {16}+{19}+{24}:1.5", "maj", "hit"),
+    "item": ("{12}:.25 {16}:.25 {19}:.25 {24}:1", "maj", None),
+    "chest_open": ("{0}:.17 {4}:.17 {7}:.17 {11}:.17 {14}:.17 {16}:.17 {19}:.17 {11}+{16}+{23}:1.5", "maj7", None),
+    "unlock": ("{7}:.25 {12}+{19}:1", "maj", None),
+    "shop": ("{4}:.25 {7}:.25 {12}:.25 {16}:.75", "maj", None),
+    "heal": ("{0}+{7}:.33 {4}+{11}:.33 {7}+{14}:.33 {12}+{16}+{19}:2", "maj7", None),
+    "save": ("{0}:.5 {7}:.5 {4}+{12}:2", "maj", None),
+    "puzzle_solved": ("{0}:.25 {4}:.25 {7}:.25 {11}:.25 {12}:.25 {14}:.25 {16}:1.5", "maj7", None),
+    "discovery": ("{0}+{7}:1 {2}+{9}:1 {4}+{11}+{14}:2.5", "lyd", "swell"),
+    "secret": ("{0}:.25 {4}:.25 {8}:.25 {12}:.25 {14}:.25 {18}:.25 {12}+{16}+{20}+{24}:1.5", "aug", None),
+    "new_area": ("{0}+{7}:2 {5}+{9}+{12}:2 {7}+{11}+{14}:3", "maj", "swell"),
+    "game_start": ("{0}:.5 {0}:.25 {0}:.25 {7}:.5 {5}:.5 {7}+{12}+{16}:2", "maj", "hit"),
+    "transition": ("{0}+{7}+{12}:2 {5}+{9}+{14}:2", "sus", "swell"),
+    "defeat": ("{7}:1 {6}:1 {5}:1 {0}+{3}+{7}:3", "min", "low"),
+    "death": ("{12}:.75 {11}:.75 {10}:.75 {9}:.75 {3}+{8}:3", "min", "low"),
+    "fail": ("{4}:.5 {3}:1.5", "min", None),
+    "power_down": ("{12}:.25 {7}:.25 {3}:.25 {0}:.25 {-5}:1.25", "min", None),
+    "danger": ("{0}+{1}:.5 r:.25 {0}+{1}:.5 r:.25 {0}+{6}:2", "dim", "low"),
+    "warning": ("{0}+{6}:.5 r:.5 {0}+{6}:.5 r:.5 {0}+{6}:.5", "dim", None),
+    "boss_appear": ("{-12}+{-11}:1 r:.5 {-12}+{-6}:1 {-12}+{-11}+{-6}+{0}:3", "dim", "big"),
+    "countdown": ("{0}:.25 r:.75 {0}:.25 r:.75 {0}:.25 r:.75 {12}:1.5", "maj", None),
+}
+STINGER_STYLES = {
+    "orchestral": dict(lead="trumpet", lead_minor="french_horn", pad="strings", bass="contrabass", kit="orchestra", engine="auto"),
+    "chip": dict(lead="square", lead_minor="square", pad="pulse25", bass="triangle", kit="chip", engine="chip"),
+    "synth": dict(lead="saw_lead", lead_minor="saw_lead", pad="supersaw", bass="sub_bass", kit="909", engine="auto"),
+    "piano": dict(lead="piano", lead_minor="piano", pad=None, bass="piano", kit=None, engine="auto"),
+    "magic": dict(lead="celesta", lead_minor="celesta", pad="choir", bass="harp", kit=None, engine="auto"),
+    "rock": dict(lead="distortion_guitar", lead_minor="distortion_guitar", pad="overdrive_guitar", bass="picked_bass", kit="power", engine="auto"),
+    "lofi": dict(lead="electric_piano", lead_minor="electric_piano", pad="warm_pad", bass="fingered_bass", kit="lofi", engine="auto"),
+}
+
+
+def stinger(kind: str, key: str = "C", tempo: float = 120, instrument: str = "", style: str = "orchestral", seed: int = 1) -> Song:
+    """Short musical cue for a game event, in the theme's key: lead line + held final chord + bass +
+    percussion accent, orchestrated by style."""
+    if kind not in STINGERS:
+        raise ValueError(f"stinger: {sorted(STINGERS)}")
+    if style not in STINGER_STYLES:
+        raise ValueError(f"stinger style: {sorted(STINGER_STYLES)}")
+    shape, colour, perc = STINGERS[kind]
+    st = STINGER_STYLES[style]
+    minor = colour in ("min", "dim")
+    lead = instrument or (st["lead_minor"] if minor else st["lead"])
+    instrument_ok(lead)
+    r = 12 * 5 + T.key_root(key)
+    txt = re.sub(r"\{(-?\d+)\}", lambda m: T.midi_to_name(r + int(m.group(1)), key), shape)
+    notes = Gn.parse_notes(txt, 100)
     beats = max(n.start + n.dur for n in notes)
-    song = Song(f"stinger_{kind}", tempo, key, "major", 4, max(1, math.ceil(beats / 4)), loop=False)
-    song.tracks.append(Track("Cue", "notes", instrument, notes, volume=0.9, reverb=0.4))
+    last_t = max(n.start for n in notes)
+    final = [n.pitch for n in notes if abs(n.start - last_t) < 1e-6]
+    song = Song(f"stinger_{kind}", tempo, key, "minor" if minor else "major", "4/4", max(1, math.ceil(beats / 4 - 1e-6)), loop=False,
+                reverb="hall" if style in ("orchestral", "magic") else "room" if style in ("piano", "rock", "lofi") else "plate")
+    eng = st["engine"]
+    song.tracks.append(Track("Lead", "notes", lead, notes, volume=0.9, reverb=0.4, engine=eng))
+    if st["pad"]:
+        pad = [Note(last_t, max(1.0, beats - last_t) + 0.5, q - 12, 80) for q in final]
+        song.tracks.append(Track("Pad", "pad", st["pad"], pad, volume=0.55, reverb=0.5, engine=eng))
+    if st["bass"] and final:
+        song.tracks.append(Track("Bass", "bass", st["bass"], [Note(last_t, max(1.0, beats - last_t), min(final) - 24, 92)], volume=0.6, reverb=0.1, engine=eng))
+    if st["kit"] and perc:
+        dn = []
+        if perc in ("big", "hit"):
+            dn += [Note(last_t, 1.0, D.GM_DRUM["crash"], 112), Note(last_t, 0.5, D.GM_DRUM["kick"], 110)]
+        if perc == "big" and style == "orchestral":
+            dn += [Note(max(0, last_t - 1) + k * 0.0625, 0.06, D.GM_DRUM["tom_floor"], 60 + k * 4) for k in range(16)]
+        if perc == "swell":
+            dn += [Note(0, 0.5, D.GM_DRUM["triangle"] if style != "chip" else D.GM_DRUM["hat"], 80)]
+        if perc == "low":
+            dn += [Note(last_t, 1.0, D.GM_DRUM["tom_floor"], 105), Note(last_t, 1.0, D.GM_DRUM["kick"], 100)]
+        if dn:
+            song.tracks.append(Track("Perc", "drums", "kit", dn, volume=0.7, reverb=0.3, drums=True, kit=st["kit"], engine=eng if eng == "chip" else "auto"))
     return song
 
 
@@ -613,25 +559,46 @@ def _vlq(n: int) -> bytes:
     return bytes(reversed(out))
 
 
-def write_midi(song: Song, path: Path, repeat: int = 1, tracks: list[str] | None = None) -> Path:
-    """Format-1 SMF. repeat>1 writes the body several times (used for seamless loop renders)."""
+def _meta_text(t: int, text: str) -> bytes:
+    b = text.encode()
+    return bytes([0xFF, t]) + _vlq(len(b)) + b
+
+
+def write_midi(song: Song, path: Path, repeat: int = 1, tracks: list[str] | None = None, volume_cc: int | None = None,
+               pad_beats: float = 0.0) -> Path:
+    """Format-1 SMF: tempo map, meter, section markers, one channel per track (drums on channel 10 with
+    the GM kit as program). repeat>1 writes the body several times; pad_beats extends the end so
+    renderers keep the release tails."""
     sel = [t for t in song.tracks if not tracks or t.name in tracks]
     body = song.length_beats
-    chunks = []
+    num, den = song.meter.split("/")
+    ev0 = []
+    ev0.append((0, _meta_text(0x03, song.title)))
+    ev0.append((0, b"\xff\x58\x04" + bytes([int(num), int(math.log2(int(den))), 36 if T.is_compound(song.meter) else 24, 8])))
+    for r in range(repeat):
+        for b_, bpm in (song.tempo_map or [(0.0, song.tempo)]):
+            ev0.append((int(round((b_ + r * body) * TPQ)), b"\xff\x51\x03" + int(60_000_000 / bpm).to_bytes(3, "big")))
+        if r == 0:
+            for s0, nm, k, _ in song.sections:
+                ev0.append((int(round(s0 * TPQ)), _meta_text(0x06, f"{nm} ({k})")))
+    ev0.sort(key=lambda e: e[0])
     meta = bytearray()
-    meta += _vlq(0) + b"\xff\x03" + _vlq(len(song.title.encode())) + song.title.encode()
-    us = int(60_000_000 / song.tempo)
-    meta += _vlq(0) + b"\xff\x51\x03" + us.to_bytes(3, "big")
-    meta += _vlq(0) + b"\xff\x58\x04" + bytes([song.beats_per_bar, 2, 24, 8])
-    meta += _vlq(int(body * repeat * TPQ)) + b"\xff\x2f\x00"
-    chunks.append(bytes(meta))
+    last = 0
+    for tick, msg in ev0:
+        meta += _vlq(tick - last) + msg
+        last = tick
+    meta += _vlq(max(0, int((body * repeat + pad_beats) * TPQ) - last)) + b"\xff\x2f\x00"
+    chunks = [bytes(meta)]
     ch_next = 0
     for tr in sel:
-        ch = 9 if tr.drums else ch_next
-        if not tr.drums:
+        if tr.drums:
+            ch = 9
+        else:
+            ch = ch_next % 16
+            if ch == 9:
+                ch_next += 1
+                ch = ch_next % 16
             ch_next += 1
-            if ch_next == 9:
-                ch_next = 10
         ev = []
         for r in range(repeat):
             for n in tr.notes:
@@ -641,11 +608,10 @@ def write_midi(song: Song, path: Path, repeat: int = 1, tracks: list[str] | None
                 ev.append((max(s + 1, e), 0, bytes([0x80 | ch, n.pitch & 0x7F, 0])))
         ev.sort(key=lambda x: (x[0], x[1]))
         data = bytearray()
-        name = tr.name.encode()
-        data += _vlq(0) + b"\xff\x03" + _vlq(len(name)) + name
-        if not tr.drums:
-            data += _vlq(0) + bytes([0xC0 | ch, tr.program & 0x7F])
-        data += _vlq(0) + bytes([0xB0 | ch, 7, int(max(0, min(1, tr.volume)) * 127)])
+        data += _vlq(0) + _meta_text(0x03, tr.name)
+        data += _vlq(0) + bytes([0xC0 | ch, program_of(tr) & 0x7F])
+        cc7 = volume_cc if volume_cc is not None else int(127 * math.sqrt(max(0.0, min(1.0, tr.volume))))  # sqrt: GM CC7 is a 40·log curve
+        data += _vlq(0) + bytes([0xB0 | ch, 7, cc7])
         data += _vlq(0) + bytes([0xB0 | ch, 10, int((max(-1, min(1, tr.pan)) + 1) * 63.5)])
         data += _vlq(0) + bytes([0xB0 | ch, 91, int(max(0, min(1, tr.reverb)) * 127)])
         last = 0
@@ -663,112 +629,138 @@ def write_midi(song: Song, path: Path, repeat: int = 1, tracks: list[str] | None
 
 
 def read_midi(path: Path) -> Song:
-    """Minimal SMF reader -> Song (notes, tempo, programs, track names). For preview/analysis/chip render."""
+    """SMF reader -> Song (notes, tempo map, meter, programs, track names, drum channel)."""
     b = path.read_bytes()
     if b[:4] != b"MThd":
         raise ValueError("not a MIDI file")
     _, fmt, ntr, div = struct.unpack(">IHHH", b[4:14])
+    if div & 0x8000:
+        raise ValueError("SMPTE-timed MIDI is not supported")
     pos = 14
-    tempo = 120.0
+    tempos: list[tuple[float, float]] = []
+    meter = "4/4"
     tracks = []
+
+    def vlq(d, i):
+        v = 0
+        while True:
+            c = d[i]
+            i += 1
+            v = (v << 7) | (c & 0x7F)
+            if not c & 0x80:
+                return v, i
+
     for ti in range(ntr):
-        assert b[pos:pos + 4] == b"MTrk", "bad track chunk"
+        if b[pos:pos + 4] != b"MTrk":
+            raise ValueError("bad track chunk")
         ln = struct.unpack(">I", b[pos + 4:pos + 8])[0]
         d = b[pos + 8:pos + 8 + ln]
         pos += 8 + ln
-        i, tick, status, name, prog, drums = 0, 0, 0, f"Track{ti}", 0, False
+        i, tick, status, name = 0, 0, 0, f"Track{ti}"
+        progs: dict[int, int] = {}
         on: dict[tuple[int, int], tuple[int, int]] = {}
-        notes = []
+        notes: dict[int, list[Note]] = {}
         while i < len(d):
-            v = 0
-            while True:
-                c = d[i]; i += 1
-                v = (v << 7) | (c & 0x7F)
-                if not c & 0x80:
-                    break
-            tick += v
+            dt, i = vlq(d, i)
+            tick += dt
             c = d[i]
             if c & 0x80:
-                status = c; i += 1
+                status = c
+                i += 1
             if status == 0xFF:
-                typ = d[i]; i += 1
-                ln2 = 0
-                while True:
-                    c = d[i]; i += 1
-                    ln2 = (ln2 << 7) | (c & 0x7F)
-                    if not c & 0x80:
-                        break
-                payload = d[i:i + ln2]; i += ln2
+                typ = d[i]
+                i += 1
+                l2, i = vlq(d, i)
+                payload = d[i:i + l2]
+                i += l2
                 if typ == 0x51:
-                    tempo = 60_000_000 / int.from_bytes(payload, "big")
+                    tempos.append((tick / div, 60_000_000 / int.from_bytes(payload, "big")))
                 elif typ == 0x03:
                     name = payload.decode(errors="replace") or name
+                elif typ == 0x58 and len(payload) >= 2:
+                    m = f"{payload[0]}/{2 ** payload[1]}"
+                    meter = m if m in T.METERS else meter
                 continue
             if status in (0xF0, 0xF7):
-                ln2 = 0
-                while True:
-                    c = d[i]; i += 1
-                    ln2 = (ln2 << 7) | (c & 0x7F)
-                    if not c & 0x80:
-                        break
-                i += ln2
+                l2, i = vlq(d, i)
+                i += l2
                 continue
             kind, ch = status & 0xF0, status & 0x0F
             if kind in (0xC0, 0xD0):
                 if kind == 0xC0:
-                    prog = d[i]
+                    progs[ch] = d[i]
                 i += 1
                 continue
-            p1, p2 = d[i], d[i + 1]; i += 2
-            if ch == 9:
-                drums = True
+            p1, p2 = d[i], d[i + 1]
+            i += 2
             if kind == 0x90 and p2 > 0:
                 on[(ch, p1)] = (tick, p2)
-            elif kind in (0x80, 0x90):
-                if (ch, p1) in on:
-                    st, vel = on.pop((ch, p1))
-                    notes.append(Note(st / div, max(1, tick - st) / div, p1, vel))
-        if notes:
-            tracks.append(Track(name, "drums" if drums else "notes", prog, notes, drums=drums))
+            elif kind in (0x80, 0x90) and (ch, p1) in on:
+                st, vel = on.pop((ch, p1))
+                notes.setdefault(ch, []).append(Note(st / div, max(1, tick - st) / div, p1, vel))
+        for ch, ns in notes.items():
+            drums = ch == 9
+            nm = name if len(notes) == 1 else f"{name}_ch{ch + 1}"
+            tracks.append(Track(nm, "drums" if drums else "notes", "kit" if drums else progs.get(ch, 0), ns, drums=drums,
+                                kit=next((k for k, v in D.KITS.items() if v == progs.get(ch, 0)), "standard") if drums else "standard"))
+    tempos.sort()
+    tempo = tempos[0][1] if tempos else 120.0
+    s = Song(path.stem, tempo, "C", "major", meter, 1, tracks, loop=False)
+    s.tempo_map = [(0.0, tempo)] + [(bt, bpm) for bt, bpm in tempos[1:] if bt > 0] if len(tempos) > 1 else []
     end = max((n.start + n.dur for t in tracks for n in t.notes), default=4)
-    return Song(path.stem, tempo, "C", "major", 4, max(1, math.ceil(end / 4 - 1e-6)), tracks, loop=False)
+    s.bars = max(1, math.ceil(end / s.bpb - 1e-6))
+    return s
 
 
 # ============================================================ preview
 
-PALETTE = [(232, 106, 92), (92, 170, 232), (246, 196, 82), (130, 206, 120), (190, 132, 230), (90, 220, 210), (240, 150, 200), (200, 200, 200)]
+PALETTE = [(232, 106, 92), (92, 170, 232), (246, 196, 82), (130, 206, 120), (190, 132, 230), (90, 220, 210), (240, 150, 200), (200, 200, 200), (255, 140, 60), (150, 180, 255)]
 
 
-def preview(song: Song, max_w: int = 1400) -> Image.Image:
-    """Piano roll: tracks coloured, bar grid, chord and section labels, drum lane at the bottom."""
+def preview(song: Song, max_w: int = 1600) -> Image.Image:
+    """Piano roll: tracks coloured, bar grid by meter, chord and section labels (with key), tempo
+    changes, drum lane at the bottom, legend with instrument and layer."""
     pitched = [n.pitch for t in song.tracks if not t.drums for n in t.notes]
     lo, hi = (min(pitched) - 2, max(pitched) + 2) if pitched else (48, 84)
     beats = max(song.length_beats, max((n.start + n.dur for t in song.tracks for n in t.notes), default=4))
-    px_b = max(8, min(40, int((max_w - 120) / beats)))
-    row = max(3, min(9, int(520 / max(1, hi - lo + 1))))
+    px_b = max(4, min(40, int((max_w - 120) / beats)))
+    row = max(3, min(9, int(560 / max(1, hi - lo + 1))))
     has_drums = any(t.drums for t in song.tracks)
     drum_rows = sorted({n.pitch for t in song.tracks if t.drums for n in t.notes})
     W = 110 + int(beats * px_b) + 10
-    H = 40 + (hi - lo + 1) * row + (len(drum_rows) * 7 + 16 if has_drums else 0) + 60
+    H = 52 + (hi - lo + 1) * row + (len(drum_rows) * 6 + 16 if has_drums else 0) + 64
     img = Image.new("RGB", (W, H), (24, 26, 32))
     dr = ImageDraw.Draw(img)
-    top = 40
+    top = 52
     for p in range(lo, hi + 1):
         y = top + (hi - p) * row
         if p % 12 in (1, 3, 6, 8, 10):
             dr.rectangle([110, y, W - 10, y + row - 1], fill=(30, 32, 40))
         if p % 12 == 0:
-            dr.text((70, y - 4), midi_to_name(p), fill=(150, 150, 160))
+            dr.text((70, y - 4), T.midi_to_name(p, song.key, song.mode if song.mode in T.MODES else "major"), fill=(150, 150, 160))
             dr.line([110, y + row - 1, W - 10, y + row - 1], fill=(48, 50, 60))
-    for b in range(int(beats) + 1):
-        x = 110 + b * px_b
-        dr.line([x, top, x, H - 60], fill=(60, 62, 75) if b % song.beats_per_bar == 0 else (36, 38, 46))
-        if b % song.beats_per_bar == 0:
-            dr.text((x + 2, H - 56), str(b // song.beats_per_bar + 1), fill=(130, 130, 140))
-    for st, ln, label in song.chords:
-        dr.text((110 + st * px_b + 2, 22), label, fill=(240, 220, 160))
-    for st, name in song.sections:
-        dr.text((110 + st * px_b + 2, 6), f"[{name}]", fill=(160, 220, 255))
+    bpb = song.bpb
+    for k in range(int(beats) + 1):
+        x = 110 + k * px_b
+        dr.line([x, top, x, H - 64], fill=(36, 38, 46))
+    nb = int(math.ceil(beats / bpb - 1e-6))
+    for bi in range(nb + 1):
+        x = 110 + bi * bpb * px_b
+        dr.line([x, top, x, H - 64], fill=(70, 72, 88))
+        if bi < nb and (px_b * bpb >= 14 or bi % 4 == 0):
+            dr.text((x + 2, H - 60), str(bi + 1), fill=(130, 130, 140))
+    lastx = -99
+    for c in song.chords:
+        x = 110 + c.start * px_b + 2
+        if x - lastx > 7 * len(c.label) * 0.8:
+            dr.text((x, 34), c.label, fill=(240, 220, 160))
+            lastx = x
+    for s0, nm, k, bars in song.sections:
+        x = 110 + s0 * px_b
+        dr.line([x, 4, x, H - 64], fill=(110, 170, 220))
+        dr.text((x + 3, 4), f"[{nm}] {k}", fill=(160, 220, 255))
+    for b_, bpm in song.tempo_map[1:]:
+        dr.text((110 + b_ * px_b + 3, 18), f"♩={bpm / T.felt(song.meter):.0f}", fill=(255, 170, 120))
     yd = top + (hi - lo + 1) * row + 10
     for k, t in enumerate(song.tracks):
         col = PALETTE[k % len(PALETTE)]
@@ -776,21 +768,23 @@ def preview(song: Song, max_w: int = 1400) -> Image.Image:
             x0 = 110 + n.start * px_b
             x1 = max(x0 + 2, 110 + (n.start + n.dur) * px_b - 1)
             if t.drums:
-                y = yd + drum_rows.index(n.pitch) * 7
-                dr.rectangle([x0, y, x0 + 3, y + 5], fill=col)
+                y = yd + drum_rows.index(n.pitch) * 6
+                dr.rectangle([x0, y, x0 + 2, y + 4], fill=col)
             else:
                 y = top + (hi - n.pitch) * row
                 shade = 0.5 + 0.5 * n.vel / 127
                 dr.rectangle([x0, y, x1, y + row - 2], fill=tuple(int(c * shade) for c in col))
-    # legend
-    lx = 110
+    lx, ly = 110, H - 44
     for k, t in enumerate(song.tracks):
         col = PALETTE[k % len(PALETTE)]
-        dr.rectangle([lx, H - 34, lx + 10, H - 24], fill=col)
-        label = f"{t.name} ({t.instrument})"
-        dr.text((lx + 14, H - 36), label, fill=(220, 220, 225))
-        lx += 22 + 7 * len(label)
-    dr.text((8, H - 18), f"{song.title}  {song.key} {song.mode}  {song.tempo:.0f} BPM  {song.bars} bars  {song.seconds:.1f}s{'  loop' if song.loop else ''}", fill=(200, 200, 205))
+        label = f"{t.name}:{t.instrument if not t.drums else t.kit} L{t.layer}"
+        w = 22 + 6 * len(label)
+        if lx + w > W - 10:
+            lx, ly = 110, ly + 13
+        dr.rectangle([lx, ly + 2, lx + 9, ly + 11], fill=col)
+        dr.text((lx + 13, ly), label, fill=(220, 220, 225))
+        lx += w
+    dr.text((8, H - 16), f"{song.title}  [{song.genre}]  {song.key} {song.mode}  {song.meter}  {song.tempo / T.felt(song.meter):.0f} BPM  {song.bars} bars  {song.seconds:.1f}s{'  loop' if song.loop else ''}", fill=(200, 200, 205))
     if img.width > max_w:
         img = img.resize((max_w, int(img.height * max_w / img.width)), Image.LANCZOS)
     return img

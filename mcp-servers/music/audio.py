@@ -1,6 +1,8 @@
-"""GameForge music audio: chiptune synth (numpy), FluidSynth renderer (SoundFont), seamless loop
-rendering, stems, loudness (ffmpeg ebur128 / loudnorm), OGG export, analysis image (waveform +
-spectrogram + loop seam check) and an sfxr-style game SFX generator."""
+"""GameForge music audio: hybrid renderer — per track, FluidSynth + SoundFont (GM instruments and
+kits), the built-in synthesizer (synth patches, 808/909/lofi/taiko kits, GM fallback without a
+SoundFont) or the chiptune engine — mixed with sends into one algorithmic reverb space, sidechain
+ducking, track FX, master FX (lo-fi tape, width, drive), seamless loops, stems, loudness (ffmpeg
+ebur128), OGG/MP3/WAV export, analysis image and an sfxr-style SFX generator."""
 from __future__ import annotations
 
 import io
@@ -12,15 +14,22 @@ import shutil
 import subprocess
 import tempfile
 import wave
+import hashlib
+import zlib
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
 import musiccore as M
+import synth as S
+from model import Song, Track
 
 SR = 48000
 SF_DIR = Path(os.path.expanduser(os.environ.get("GAMEFORGE_SOUNDFONTS", "~/.cache/gameforge/soundfonts")))
+SF_GAIN = 3.5          # FluidSynth group level relative to the built-in synth (calibrated: same parts, same RMS)
 
 
 # ============================================================ tools discovery
@@ -48,8 +57,8 @@ def default_soundfont():
 def status() -> dict:
     sf = default_soundfont()
     return {"fluidsynth": which_fluidsynth(), "soundfont": sf, "ffmpeg": which_ffmpeg(), "ogg_encoder": _ogg_encoder()[0] or None,
-            "chip_synth": True,
-            "ready_for": [x for x, ok in (("chip", True), ("soundfont", bool(which_fluidsynth() and sf)), ("ogg+lufs", bool(which_ffmpeg()))) if ok]}
+            "builtin_synth": True, "synth_patches": sorted(S.PATCHES), "synth_kits": sorted(S.SYNTH_KITS),
+            "ready_for": [x for x, ok in (("chip", True), ("synth", True), ("soundfont", bool(which_fluidsynth() and sf)), ("ogg+lufs", bool(which_ffmpeg()))) if ok]}
 
 
 # ============================================================ wav io
@@ -76,16 +85,20 @@ def write_wav(path: Path, x: np.ndarray, sr: int = SR, bits: int = 16) -> Path:
 
 def read_audio(path: Path) -> tuple[np.ndarray, int]:
     path = Path(path)
+    tmpdir = None
     if path.suffix.lower() != ".wav":
         ff = which_ffmpeg()
         if not ff:
             raise ValueError("reading non-WAV audio needs ffmpeg")
-        tmp = Path(tempfile.mkdtemp()) / "dec.wav"
+        tmpdir = Path(tempfile.mkdtemp())
+        tmp = tmpdir / "dec.wav"
         subprocess.run([ff, "-v", "error", "-y", "-i", str(path), "-c:a", "pcm_s16le", str(tmp)], check=True)
         path = tmp
     with wave.open(str(path), "rb") as w:
         n, ch, sw, sr = w.getnframes(), w.getnchannels(), w.getsampwidth(), w.getframerate()
         raw = w.readframes(n)
+    if tmpdir:
+        shutil.rmtree(tmpdir, ignore_errors=True)
     if sw == 2:
         x = np.frombuffer(raw, "<i2").astype(np.float32) / 32768
     elif sw == 3:
@@ -100,163 +113,155 @@ def read_audio(path: Path) -> tuple[np.ndarray, int]:
     return x.reshape(-1, ch), sr
 
 
-# ============================================================ chiptune synth
-
-ROLE_WAVE = {"bass": "triangle", "pad": "pulse25", "chords": "pulse25", "arp": "pulse12", "melody": "square", "notes": "square"}
-ENV = {  # attack, decay, sustain level, release (seconds)
-    "bass": (0.003, 0.08, 0.85, 0.03), "pad": (0.08, 0.3, 0.55, 0.25), "chords": (0.004, 0.12, 0.45, 0.06),
-    "arp": (0.002, 0.09, 0.25, 0.04), "melody": (0.004, 0.1, 0.65, 0.07), "notes": (0.004, 0.1, 0.65, 0.07),
-}
+# ============================================================ engines per track
 
 
-def _osc(kind: str, phase: np.ndarray) -> np.ndarray:
-    f = phase % 1.0
-    if kind == "square":
-        return np.where(f < 0.5, 0.6, -0.6)
-    if kind == "pulse25":
-        return np.where(f < 0.25, 0.6, -0.6)
-    if kind == "pulse12":
-        return np.where(f < 0.125, 0.6, -0.6)
-    if kind == "triangle":  # 4-bit stepped triangle like the NES
-        tri = 1 - 4 * np.abs(f - 0.5)
-        return np.round(tri * 7.5) / 7.5 * 0.7
-    if kind == "saw":
-        return (2 * f - 1) * 0.55
-    if kind == "sine":
-        return np.sin(2 * np.pi * f) * 0.8
-    raise ValueError(kind)
+def engine_of(tr: Track, pref: str, sf_ok: bool) -> str:
+    """-> 'chip' | 'synth' | 'sf'. pref: auto | chip | soundfont | synth (whole-song preference)."""
+    e = tr.engine
+    if pref == "chip" or e == "chip":
+        return "chip"
+    if tr.drums:
+        if tr.kit == "chip":
+            return "chip"
+        if pref == "synth" or e == "synth" or tr.kit in S.SYNTH_KITS:
+            return "synth"
+        return "sf" if sf_ok else "synth"
+    inst = tr.instrument
+    if isinstance(inst, str) and inst in S.CHIP_WAVES:
+        return "chip"
+    if pref == "synth" or e == "synth":
+        return "synth"
+    if e == "sf" or pref == "soundfont":
+        return "sf" if sf_ok else "synth"
+    if isinstance(inst, str) and inst in S.PATCHES:
+        return "synth"
+    return "sf" if sf_ok else "synth"
 
 
-def _env(n: int, sr: int, a: float, d: float, s: float, r: float, held: int) -> np.ndarray:
-    t = np.arange(n) / sr
-    e = np.where(t < a, t / max(a, 1e-4), s + (1 - s) * np.exp(-(t - a) / max(d, 1e-4)))
-    if held < n:
-        rel = np.exp(-(np.arange(n - held)) / (max(r, 1e-3) * sr))
-        e[held:] = e[held - 1 if held > 0 else 0] * rel
-    return e
+def _patch_for(tr: Track) -> dict:
+    i = tr.instrument
+    if isinstance(i, str) and i in S.PATCHES:
+        return S.PATCHES[i]
+    return S.PATCHES[S.gm_fallback(M.program_of(tr))]
 
 
-def _drum(pitch: int, n_vel: float, sr: int, rnd: np.random.Generator) -> np.ndarray:
-    def T(sec):
-        return np.arange(int(sec * sr)) / sr
-    if pitch == 36:  # kick
-        t = T(0.35); f = 50 + 110 * np.exp(-t / 0.04)
-        x = np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t / 0.18)
-        x[: int(0.003 * sr)] += rnd.uniform(-0.6, 0.6, int(0.003 * sr))
-    elif pitch in (38, 40, 37):  # snare / rim
-        t = T(0.25 if pitch != 37 else 0.05)
-        tone = np.sin(2 * np.pi * (190 if pitch != 37 else 900) * t) * np.exp(-t / 0.05)
-        noise = rnd.uniform(-1, 1, len(t)) * np.exp(-t / (0.11 if pitch != 37 else 0.02))
-        x = 0.45 * tone + 0.6 * noise
-    elif pitch == 39:  # clap: three bursts
-        t = T(0.25); x = np.zeros(len(t))
-        for k in range(3):
-            o = int(k * 0.012 * sr)
-            seg = rnd.uniform(-1, 1, len(t) - o) * np.exp(-np.arange(len(t) - o) / (0.012 * sr if k < 2 else 0.08 * sr))
-            x[o:] += seg * 0.6
-    elif pitch in (42, 44, 46, 70, 54):  # hats / shaker / tambourine
-        dur = {42: 0.05, 44: 0.06, 46: 0.28, 70: 0.07, 54: 0.12}[pitch]
-        t = T(dur + 0.02); n = rnd.uniform(-1, 1, len(t))
-        n = np.diff(np.concatenate([[0], n]))  # crude high-pass
-        x = n * np.exp(-t / (dur / 2.5)) * 0.5
-    elif pitch in (49, 51, 57):  # crash / ride
-        t = T(1.6 if pitch == 49 else 0.8); n = rnd.uniform(-1, 1, len(t))
-        n = np.diff(np.concatenate([[0], n]))
-        x = n * np.exp(-t / (0.55 if pitch == 49 else 0.25)) * 0.35
-    elif pitch in (45, 47, 50, 41, 43, 48):  # toms / timpani
-        base = {41: 70, 43: 85, 45: 100, 47: 130, 48: 150, 50: 175}.get(pitch, 110)
-        t = T(0.45); f = base * (1 + 0.5 * np.exp(-t / 0.03))
-        x = np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t / 0.2) * 0.9
-    else:
-        t = T(0.1); x = rnd.uniform(-1, 1, len(t)) * np.exp(-t / 0.03) * 0.4
-    return x * n_vel
-
-
-def _reverb_ir(sr: int, seconds: float = 1.6, seed: int = 7) -> np.ndarray:
-    rnd = np.random.default_rng(seed)
-    n = int(sr * seconds)
-    t = np.arange(n) / sr
-    ir = rnd.standard_normal((n, 2)) * np.exp(-t / (seconds / 6.9))[:, None]
-    ir[: int(0.012 * sr)] = 0  # pre-delay
-    return ir / np.sqrt(np.sum(ir ** 2, axis=0, keepdims=True)) * 0.6
-
-
-def _fft_conv(x: np.ndarray, ir: np.ndarray) -> np.ndarray:
-    n = len(x) + len(ir) - 1
-    N = 1 << (n - 1).bit_length()
-    out = np.fft.irfft(np.fft.rfft(x, N, axis=0) * np.fft.rfft(ir, N, axis=0), N, axis=0)[:n]
+def _pan(buf: np.ndarray, pan: float) -> np.ndarray:
+    gl = math.cos((pan + 1) * math.pi / 4) * math.sqrt(2)
+    gr = math.sin((pan + 1) * math.pi / 4) * math.sqrt(2)
+    out = buf.copy()
+    out[:, 0] *= gl
+    out[:, 1] *= gr
     return out
 
 
-def render_chip(song: M.Song, sr: int = SR, repeat: int = 1, tracks: list[str] | None = None, reverb: float = 0.25, seed: int = 3) -> np.ndarray:
-    """Synthesize the song (or selected tracks) into stereo float audio. repeat>1 for loop renders."""
-    rnd = np.random.default_rng(seed)
+def _place(buf: np.ndarray, x: np.ndarray, st: int):
+    if st >= len(buf):
+        return
+    e = min(len(buf), st + len(x))
+    if x.ndim == 1:
+        buf[st:e] += x[: e - st, None]
+    else:
+        buf[st:e] += x[: e - st]
+
+
+def _track_fx(x: np.ndarray, fx: dict, song: Song, sr: int) -> np.ndarray:
+    if not fx:
+        return x
     spb = 60.0 / song.tempo
+    if fx.get("highpass"):
+        x = S.filt(x, "highpass", float(fx["highpass"]), sr)
+    if fx.get("lowpass"):
+        x = S.filt(x, "lowpass", float(fx["lowpass"]), sr)
+    if fx.get("drive"):
+        x = S.drive(x, float(fx["drive"]))
+    if fx.get("bitcrush"):
+        x = S.bitcrush(x, float(fx["bitcrush"]), 2)
+    if fx.get("chorus"):
+        x = S.chorus(x, sr, float(fx["chorus"]))
+    if fx.get("delay"):
+        x = S.delay(x, sr, float(fx["delay"]) * spb, float(fx.get("feedback", 0.35)), float(fx.get("delay_mix", 0.22)))
+    return x
+
+
+def render_track(tr: Track, song: Song, sr: int, rep: int, total: int, eng: str) -> np.ndarray:
+    """Dry stereo buffer of one track (pan applied, volume not) for the chip/synth engines."""
+    rng = np.random.default_rng(zlib.crc32(tr.name.encode()) + 17)
+    buf = np.zeros((total, 2), np.float32)
     body = song.length_beats
-    total = int((body * repeat * spb + 2.0) * sr)
-    dry = np.zeros((total, 2), np.float32)
-    send = np.zeros((total, 2), np.float32)
-    for tr in song.tracks:
-        if tracks and tr.name not in tracks:
-            continue
-        kind = tr.instrument if isinstance(tr.instrument, str) and tr.instrument in M.CHIP_WAVES else ROLE_WAVE.get(tr.role, "square")
-        a, d, s, r = ENV.get(tr.role, ENV["notes"])
-        gl = math.cos((tr.pan + 1) * math.pi / 4)
-        gr = math.sin((tr.pan + 1) * math.pi / 4)
-        buf = np.zeros(total, np.float32)
-        for rep in range(repeat):
-            for n in tr.notes:
-                st = int((n.start + rep * body) * spb * sr)
-                if st >= total:
-                    continue
-                v = n.vel / 127
-                if tr.drums or kind == "noise":
-                    x = _drum(n.pitch if tr.drums else 38, v, sr, rnd)
+    spb = 60.0 / song.tempo
+    cache: dict = {}
+    gated = bool(tr.params.get("fx", {}).get("gated"))
+    patch = None if (tr.drums or eng == "chip") else _patch_for(tr)
+    kind = (tr.instrument if isinstance(tr.instrument, str) and tr.instrument in S.CHIP_WAVES
+            else S.CHIP_ROLE_WAVE.get(tr.role, "square"))
+    pparams = {k: tr.params[k] for k in ("cut", "q", "drive") if k in tr.params}
+    for r in range(rep):
+        prev = None
+        prev_end = -1.0
+        for n in tr.notes:
+            t0 = song.sec(n.start + r * body)
+            st = int(round(t0 * sr))
+            if st >= total:
+                continue
+            if tr.drums:
+                key = (n.pitch, n.vel // 6)
+                if eng == "chip" or tr.kit == "chip":
+                    x = cache.get(key)
+                    if x is None:
+                        x = S.drum_hit("chip", n.pitch, n.vel, sr, rng)
+                        cache[key] = x
                 else:
-                    held = int(n.dur * spb * sr)
-                    ln = held + int(r * 5 * sr)
-                    t = np.arange(ln) / sr
-                    f = 440.0 * 2 ** ((n.pitch - 69) / 12)
-                    if tr.role in ("melody", "notes") and n.dur * spb > 0.35:  # delayed vibrato on long lead notes
-                        vib = 1 + 0.006 * np.sin(2 * np.pi * 5.5 * t) * np.clip((t - 0.15) / 0.2, 0, 1)
-                        phase = np.cumsum(f * vib) / sr
-                    else:
-                        phase = f * t
-                    x = _osc(kind, phase) * _env(ln, sr, a, d, s, r, held) * v
-                e = min(total, st + len(x))
-                buf[st:e] += x[: e - st].astype(np.float32)
-        buf *= tr.volume
-        dry[:, 0] += buf * gl
-        dry[:, 1] += buf * gr
-        send[:, 0] += buf * gl * tr.reverb
-        send[:, 1] += buf * gr * tr.reverb
-    if reverb > 0 and np.any(send):
-        wet = _fft_conv(send, _reverb_ir(sr))[:total]
-        dry += wet.astype(np.float32) * reverb * 2.5
-    return dry
+                    x = S.drum_hit(tr.kit, n.pitch, n.vel, sr, rng, gated=gated)
+            else:
+                dur_s = max(0.02, song.sec(n.start + n.dur + r * body) - t0)
+                if eng == "chip" and kind == "noise":
+                    x = S.drum_hit("chip", 38, n.vel, sr, rng)
+                elif eng == "chip":
+                    key = (n.pitch, round(dur_s, 3), n.vel // 4)
+                    x = cache.get(key)
+                    if x is None:
+                        x = S.chip_note(kind, tr.role, n.pitch, dur_s, n.vel, sr)
+                        cache[key] = x
+                else:
+                    legato = prev is not None and t0 - prev_end < 0.03
+                    key = (n.pitch, round(dur_s, 3), n.vel // 6, prev if (legato and patch.get("glide")) else None)
+                    x = cache.get(key)
+                    if x is None:
+                        x = S.render_note(patch, n.pitch, dur_s, n.vel, sr, rng, spb, prev if legato else None, pparams or None)
+                        cache[key] = x
+                prev, prev_end = n.pitch, t0 + dur_s
+            _place(buf, x, st)
+    fx = dict((patch or {}).get("fx", {}))
+    fx.update({k: v for k, v in tr.params.get("fx", {}).items() if k != "gated"})
+    buf = _track_fx(buf, fx, song, sr)
+    return _pan(buf, tr.pan).astype(np.float32)
 
 
 # ============================================================ fluidsynth
 
 
-def render_fluidsynth(song: M.Song, sf: str | None = None, sr: int = SR, repeat: int = 1, tracks: list[str] | None = None,
-                      gain: float = 0.6, reverb: bool = True) -> np.ndarray:
+def render_fluidsynth(song: Song, sf: str | None = None, sr: int = SR, repeat: int = 1, tracks: list[str] | None = None,
+                      gain: float = 0.6, volume_cc: int | None = None, pad_beats: float = 0.0) -> np.ndarray:
+    """Dry render (FluidSynth reverb/chorus off — the space is added by our reverb, shared with all engines)."""
     fs = which_fluidsynth()
     sf = sf or default_soundfont()
     if not fs:
-        raise ValueError("FluidSynth not installed (brew install fluid-synth) — use synth='chip' or run gameforge:doctor")
+        raise ValueError("FluidSynth not installed (brew install fluid-synth) — use synth='synth' or 'chip', or run gameforge:doctor")
     if not sf or not os.path.exists(sf):
         raise ValueError(f"no SoundFont in {SF_DIR} — run gameforge:doctor (MuseScore_General.sf3, MIT) or pass soundfont=")
     tmp = Path(tempfile.mkdtemp(prefix="gf_mus_"))
-    mid = M.write_midi(song, tmp / "song.mid", repeat=repeat, tracks=tracks)
-    out = tmp / "out.wav"
-    cmd = [fs, "-ni", "-q", "-g", str(gain), "-r", str(sr), "-o", f"synth.reverb.active={'1' if reverb else '0'}",
-           "-o", "synth.chorus.active=0", "-F", str(out), sf, str(mid)]
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    if p.returncode != 0 or not out.exists():
-        raise ValueError(f"fluidsynth failed: {p.stderr.strip()[:400]}")
-    x, fsr = read_audio(out)
-    shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        mid = M.write_midi(song, tmp / "song.mid", repeat=repeat, tracks=tracks, volume_cc=volume_cc, pad_beats=pad_beats)
+        out = tmp / "out.wav"
+        cmd = [fs, "-ni", "-q", "-g", str(gain), "-r", str(sr), "-o", "synth.reverb.active=0",
+               "-o", "synth.chorus.active=0", "-F", str(out), sf, str(mid)]
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        if p.returncode != 0 or not out.exists():
+            raise ValueError(f"fluidsynth failed: {p.stderr.strip()[:400]}")
+        x, _ = read_audio(out)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     if x.shape[1] == 1:
         x = np.repeat(x, 2, axis=1)
     return x
@@ -264,20 +269,44 @@ def render_fluidsynth(song: M.Song, sf: str | None = None, sr: int = SR, repeat:
 
 # ============================================================ render pipeline
 
-
-def _loop_cut(x: np.ndarray, song: M.Song, sr: int) -> np.ndarray:
-    """Body rendered twice: keep the 2nd pass so the reverb/release tail of the end flows into the start."""
-    L = int(round(song.length_beats * 60.0 / song.tempo * sr))
-    seg = x[L: 2 * L]
-    if len(seg) < L:
-        seg = np.concatenate([seg, np.zeros((L - len(seg), x.shape[1]), x.dtype)])
-    return seg
+# automix: target loudness (dB, mean power of the active parts) per role; `volume` trims around 0.8
+ROLE_TARGET_DB = {"melody": -18, "notes": -18, "counter": -23, "fanfare": -21, "drums": -19, "bass": -20, "power": -21,
+                  "chords": -24, "pulse": -25, "pad": -25, "arp": -24, "ostinato": -24, "drone": -27, "texture": -25}
+_CACHE: "OrderedDict[str, np.ndarray]" = OrderedDict()
+_CACHE_MAX = 24
 
 
-def _trim_tail(x: np.ndarray, song: M.Song, sr: int, max_tail: float = 3.0) -> np.ndarray:
-    L = int(song.length_beats * 60.0 / song.tempo * sr)
+def _fit(x: np.ndarray, total: int) -> np.ndarray:
+    if len(x) >= total:
+        return x[:total]
+    return np.concatenate([x, np.zeros((total - len(x), x.shape[1]), x.dtype)])
+
+
+def _kick_secs(song: Song, rep: int) -> list[float]:
+    body = song.length_beats
+    return sorted(song.sec(n.start + r * body) for r in range(rep) for t in song.tracks if t.drums for n in t.notes if n.pitch in (35, 36))
+
+
+def _loop_len(song: Song, sr: int) -> int:
+    return int(round(song.seconds * sr))
+
+
+def _wrap(x: np.ndarray, L: int) -> np.ndarray:
+    """Seamless loop: one pass rendered with its full tail; everything after the loop end (releases,
+    echoes, reverb) is added onto the start — exactly what plays when the loop repeats."""
+    y = x[:L].copy()
+    k = L
+    while k < len(x):
+        seg = x[k:k + L]
+        y[: len(seg)] += seg
+        k += L
+    return y
+
+
+def _trim_tail(x: np.ndarray, song: Song, sr: int, max_tail: float = 4.0) -> np.ndarray:
+    L = _loop_len(song, sr)
     end = min(len(x), L + int(max_tail * sr))
-    y = x[:end]
+    y = x[:end].copy()
     mag = np.max(np.abs(y), axis=1)
     above = np.nonzero(mag > 10 ** (-60 / 20))[0]
     if len(above):
@@ -287,24 +316,131 @@ def _trim_tail(x: np.ndarray, song: M.Song, sr: int, max_tail: float = 3.0) -> n
     return y
 
 
-def render(song: M.Song, synth: str = "auto", sr: int = SR, tracks: list[str] | None = None, soundfont: str | None = None) -> tuple[np.ndarray, str]:
-    if synth == "auto":
-        synth = "soundfont" if (which_fluidsynth() and (soundfont or default_soundfont())) else "chip"
-        if all((isinstance(t.instrument, str) and t.instrument in M.CHIP_WAVES) or t.drums for t in song.tracks):
-            synth = "chip"
-    rep = 2 if song.loop else 1
-    if synth == "chip":
-        x = render_chip(song, sr, rep, tracks)
-    elif synth == "soundfont":
-        x = render_fluidsynth(song, soundfont, sr, rep, tracks)
-    else:
-        raise ValueError("synth: auto | chip | soundfont")
-    x = _loop_cut(x, song, sr) if song.loop else _trim_tail(x, song, sr)
-    return x.astype(np.float32), synth
+def active_db(x: np.ndarray, sr: int) -> float:
+    """Loudness of a part while it plays: mean power of 50 ms windows within 40 dB of its loudest window."""
+    p = (x.astype(np.float64) ** 2).mean(axis=1) if x.ndim == 2 else x.astype(np.float64) ** 2
+    w = int(0.05 * sr)
+    n = len(p) // w
+    if n == 0:
+        return -120.0
+    e = p[: n * w].reshape(n, w).mean(1)
+    if e.max() <= 1e-14:
+        return -120.0
+    act = e[e > e.max() * 1e-4]
+    return float(10 * math.log10(act.mean()))
+
+
+def _digest(song: Song, tr: Track, eng: str, rep: int, total: int, sr: int, sf: str | None, vol_cc) -> str:
+    h = hashlib.sha1()
+    h.update(repr((song.tempo, song.tempo_map, song.meter, song.length_beats, rep, total, sr, eng, sf, vol_cc,
+                   tr.name, tr.role, tr.instrument, tr.kit, tr.pan, tr.engine, sorted((k, repr(v)) for k, v in tr.params.items()))).encode())
+    h.update(np.array([(n.start, n.dur, n.pitch, n.vel) for n in tr.notes], np.float64).tobytes())
+    return h.hexdigest()
+
+
+def _cached(key: str):
+    x = _CACHE.get(key)
+    if x is not None:
+        _CACHE.move_to_end(key)
+    return x
+
+
+def _store(key: str, x: np.ndarray):
+    _CACHE[key] = x
+    _CACHE.move_to_end(key)
+    while len(_CACHE) > _CACHE_MAX:
+        _CACHE.popitem(last=False)
+
+
+def _sf_track(song: Song, tr: Track, sf, sr, total, vol_cc, pad_beats) -> np.ndarray:
+    return _fit(render_fluidsynth(song, sf, sr, 1, [tr.name], volume_cc=vol_cc, pad_beats=pad_beats), total)
+
+
+def render(song: Song, synth: str = "auto", sr: int = SR, tracks: list[str] | None = None, soundfont: str | None = None,
+           mix: str = "auto", gains: dict | None = None, info: dict | None = None) -> tuple[np.ndarray, str]:
+    """synth: auto (per track: SoundFont for GM instruments if installed, built-in synth for synth patches
+    and synth kits, chip engine for chip waves) | soundfont | synth (everything built-in) | chip.
+    mix: auto (each part brought to its role's target loudness, `volume` = trim around 0.8) | manual
+    (`volume` as a plain gain). gains: precomputed per-track linear gains (used for section slices so
+    they keep the song's balance); info: receives {'gains': ..., 'engines': ...}."""
+    if synth not in ("auto", "soundfont", "synth", "chip"):
+        raise ValueError("synth: auto | soundfont | synth | chip")
+    if mix not in ("auto", "manual"):
+        raise ValueError("mix: auto | manual")
+    sf_ok = bool(which_fluidsynth() and (soundfont or default_soundfont()))
+    if synth == "soundfont" and not sf_ok:
+        raise ValueError("synth='soundfont' needs FluidSynth + a SoundFont — run gameforge:doctor, or use synth='auto'/'synth'")
+    L = _loop_len(song, sr)
+    tail_s = (S.SPACES.get(song.reverb) or (0, 0, 0))[0] * 1.1 + 2.5
+    total = L + int(tail_s * sr)
+    pad_beats = tail_s * (song.tempo_map[-1][1] if song.tempo_map else song.tempo) / 60.0
+    sel = [t for t in song.tracks if (not tracks or t.name in tracks) and t.notes]
+    plan = {t.name: engine_of(t, synth, sf_ok) for t in sel}
+    kicks = _kick_secs(song, 2 if song.loop else 1)
+    release = 0.55 * 60.0 / song.tempo
+    sf = soundfont or default_soundfont()
+
+    bufs: dict[str, np.ndarray] = {}
+    todo_sf = []
+    for t in sel:
+        vol_cc = 100 if mix == "auto" else None
+        key = _digest(song, t, plan[t.name], 1, total, sr, sf if plan[t.name] == "sf" else None, vol_cc if plan[t.name] == "sf" else None)
+        x = _cached(key)
+        if x is not None:
+            bufs[t.name] = x
+        elif plan[t.name] == "sf":
+            todo_sf.append((t, key, vol_cc))
+        else:
+            x = render_track(t, song, sr, 1, total, plan[t.name])
+            _store(key, x)
+            bufs[t.name] = x
+    if todo_sf:
+        with ThreadPoolExecutor(max_workers=min(4, len(todo_sf))) as ex:
+            futs = {ex.submit(_sf_track, song, t, soundfont, sr, total, vc, pad_beats): (t, key) for t, key, vc in todo_sf}
+            for f, (t, key) in futs.items():
+                x = f.result()
+                _store(key, x)
+                bufs[t.name] = x
+
+    used_gains = {}
+    dry = np.zeros((total, 2), np.float32)
+    send = np.zeros((total, 2), np.float32)
+    for t in sel:
+        x = bufs[t.name]
+        if gains and t.name in gains:
+            g = gains[t.name]
+        elif mix == "auto":
+            target = ROLE_TARGET_DB.get(t.role, -22) + 20 * math.log10(max(t.volume, 1e-3) / 0.8)
+            g = 10 ** (max(-30.0, min(18.0, target - active_db(x, sr))) / 20)
+        else:
+            g = t.volume * (SF_GAIN if plan[t.name] == "sf" else 1.0)
+        used_gains[t.name] = g
+        y = x * g
+        if t.duck > 0:
+            y = y * S.duck_envelope(total, sr, kicks, t.duck, release)[:, None]
+        dry += y
+        send += y * t.reverb
+    ir = S.reverb_ir(song.reverb, sr)
+    if ir is not None and np.any(send):
+        wet = S.convolve(send, ir)[:total]
+        dry += wet.astype(np.float32) * 0.9
+    x = _wrap(dry, L) if song.loop else _trim_tail(dry, song, sr, max_tail=tail_s)
+    m = song.master or {}
+    if m.get("lofi"):
+        x = S.lofi(x, sr, float(m["lofi"]), seed=5, noise=not tracks, circular=song.loop).astype(np.float32)
+    if m.get("drive"):
+        x = S.drive(x, float(m["drive"]))
+    if m.get("width"):
+        x = S.width(x, float(m["width"]))
+    engines = sorted(set(plan.values()))
+    used = "+".join({"sf": "soundfont"}.get(e, e) for e in engines) or "none"
+    if info is not None:
+        info["gains"] = used_gains
+        info["engines"] = plan
+    return x.astype(np.float32), used
 
 
 # ============================================================ loudness & export
-
 
 def lufs(path: Path) -> dict:
     ff = which_ffmpeg()
@@ -323,7 +459,7 @@ def lufs(path: Path) -> dict:
             "true_peak_db": f(pk[-1]) if pk else None, "method": "ffmpeg ebur128"}
 
 
-def normalize(x: np.ndarray, sr: int, target_lufs: float = -16.0, ceiling_db: float = -1.0) -> tuple[np.ndarray, dict]:
+def normalize(x: np.ndarray, sr: int, target_lufs: float = -16.0, ceiling_db: float = -1.5) -> tuple[np.ndarray, dict]:
     """Linear gain to the target loudness (measured with ffmpeg) + soft ceiling. Linear gain keeps loops seamless."""
     tmp = Path(tempfile.mkdtemp()) / "m.wav"
     write_wav(tmp, x, sr)
@@ -427,8 +563,8 @@ def analyze(path: Path, loop: bool | None = None) -> tuple[dict, Image.Image]:
     seam = {"sample_jump": round(jump, 4), "jump_vs_local": round(jump / typical, 2), "rms_ratio_end_start": round(rms_end / rms_start, 2)}
     if jump / typical > 3:
         seam["verdict"] = "click risk at the loop point (discontinuity) — render with loop=true or add a short crossfade"
-    elif not 0.1 < rms_end / rms_start < 10:
-        seam["verdict"] = "level jump at the loop point — check the arrangement of the last/first bar"
+    elif rms_end / rms_start > 8:
+        seam["verdict"] = "sound is cut at the loop point (loud end, quiet start) — check the arrangement of the last/first bar"
     else:
         seam["verdict"] = "ok (continuous; a louder downbeat at the start is normal)"
     if loop is not False:
@@ -466,7 +602,9 @@ def analyze(path: Path, loop: bool | None = None) -> tuple[dict, Image.Image]:
 
 # ============================================================ SFX (sfxr-style)
 
-SFX_KINDS = ["coin", "jump", "laser", "explosion", "hit", "hurt", "powerup", "blip", "ui_click", "ui_confirm", "ui_cancel", "error", "magic", "whoosh", "footstep", "land"]
+SFX_KINDS = ["coin", "jump", "double_jump", "laser", "shoot", "explosion", "hit", "punch", "hurt", "death", "powerup", "heal",
+             "pickup", "blip", "select", "ui_click", "ui_confirm", "ui_cancel", "ui_hover", "error", "magic", "teleport", "charge",
+             "zap", "whoosh", "footstep", "land", "bounce", "alarm", "door", "splash", "thunder"]
 
 
 def _sfx_params(kind: str, r: random.Random) -> dict:
@@ -505,6 +643,38 @@ def _sfx_params(kind: str, r: random.Random) -> dict:
         P.update(wave="noise", f=120, a=0.001, sus=0.005, dec=U(0.05, 0.09), lpf=U(0.15, 0.3), punch=0.4, noise_mix=0.0, gain=0.9)
     elif kind == "land":
         P.update(wave="sine", f=U(90, 130), slide=-U(1.5, 3), a=0.001, sus=0.01, dec=U(0.12, 0.2), noise_mix=U(0.3, 0.5), punch=0.5)
+    elif kind == "double_jump":
+        P.update(f=U(380, 560), slide=U(2.0, 3.2), sus=U(0.03, 0.06), dec=U(0.1, 0.18), duty=U(0.12, 0.3), rep=U(0.05, 0.07))
+    elif kind == "shoot":
+        P.update(wave="noise", f=U(500, 900), slide=-U(2, 4), a=0.001, sus=0.01, dec=U(0.08, 0.16), punch=U(0.4, 0.8), noise_mix=0.0, lpf=U(0.5, 0.9))
+    elif kind == "punch":
+        P.update(wave="noise", f=U(90, 160), slide=-U(1, 3), a=0.001, sus=0.005, dec=U(0.08, 0.14), punch=0.8, lpf=U(0.2, 0.35), gain=1.0)
+    elif kind == "death":
+        P.update(wave="square", f=U(400, 560), slide=-U(1.0, 1.8), sus=U(0.2, 0.35), dec=U(0.3, 0.5), vib=U(0.08, 0.15), vib_hz=U(8, 12), duty=0.5)
+    elif kind == "heal":
+        P.update(wave="sine", f=U(420, 560), slide=U(0.5, 0.9), a=0.02, sus=U(0.2, 0.3), dec=U(0.3, 0.5), rep=U(0.09, 0.13), vib=0.02, vib_hz=6)
+    elif kind == "pickup":
+        P.update(f=U(600, 900), arp=U(1.25, 1.34), arp_t=U(0.03, 0.05), sus=U(0.02, 0.05), dec=U(0.08, 0.14), duty=U(0.4, 0.5))
+    elif kind == "select":
+        P.update(wave="square", f=U(900, 1300), arp=2.0, arp_t=0.03, sus=0.02, dec=0.06, duty=0.25, gain=0.6)
+    elif kind == "ui_hover":
+        P.update(wave="sine", f=U(2200, 3200), a=0.001, sus=0.002, dec=U(0.01, 0.02), gain=0.4)
+    elif kind == "teleport":
+        P.update(wave="sine", f=U(200, 300), slide=U(2.5, 4), a=0.01, sus=U(0.2, 0.3), dec=U(0.2, 0.3), vib=U(0.1, 0.2), vib_hz=U(25, 40))
+    elif kind == "charge":
+        P.update(wave="saw", f=U(110, 160), slide=U(1.8, 2.6), a=U(0.2, 0.4), sus=U(0.3, 0.5), dec=0.08, vib=0.03, vib_hz=14, lpf=U(0.3, 0.5), lpf_sweep=U(1, 2))
+    elif kind == "zap":
+        P.update(wave="saw", f=U(1200, 2000), slide=-U(5, 9), a=0.001, sus=0.01, dec=U(0.06, 0.12), noise_mix=U(0.3, 0.5), vib=0.3, vib_hz=60)
+    elif kind == "bounce":
+        P.update(wave="sine", f=U(180, 260), slide=U(2.5, 3.5), a=0.001, sus=0.01, dec=U(0.1, 0.16), punch=0.3)
+    elif kind == "alarm":
+        P.update(wave="square", f=U(650, 850), sus=U(0.6, 0.9), dec=0.08, vib=U(0.2, 0.28), vib_hz=U(2.5, 4), duty=0.5, gain=0.6)
+    elif kind == "door":
+        P.update(wave="noise", f=U(70, 110), slide=-0.3, a=U(0.02, 0.05), sus=U(0.15, 0.3), dec=U(0.15, 0.3), lpf=U(0.12, 0.2), punch=0.3, gain=0.9)
+    elif kind == "splash":
+        P.update(wave="noise", f=U(500, 800), slide=-U(0.5, 1.2), a=0.004, sus=U(0.05, 0.1), dec=U(0.3, 0.5), lpf=U(0.4, 0.7), lpf_sweep=-U(0.8, 1.6), gain=0.9)
+    elif kind == "thunder":
+        P.update(wave="noise", f=U(40, 80), slide=-0.2, a=0.005, sus=U(0.3, 0.5), dec=U(1.2, 2.0), punch=U(0.5, 0.9), lpf=U(0.15, 0.3), lpf_sweep=-U(0.3, 0.7), gain=1.0)
     else:
         raise ValueError(f"sfx kind: {SFX_KINDS}")
     return P
@@ -534,7 +704,8 @@ def synth_sfx(P: dict, sr: int = 44100, seed: int = 0) -> np.ndarray:
     elif w in ("square",):
         x = np.where((ph % 1) < P["duty"], 0.7, -0.7)
     else:
-        x = _osc({"saw": "saw", "sine": "sine", "triangle": "triangle"}[w], ph)
+        fr = ph % 1.0
+        x = {"saw": (2 * fr - 1) * 0.55, "sine": np.sin(2 * np.pi * fr) * 0.8, "triangle": (1 - 4 * np.abs(fr - 0.5)) * 0.7}[w]
     if P["noise_mix"] > 0:
         x = x * (1 - P["noise_mix"]) + nr.uniform(-1, 1, n) * P["noise_mix"]
     env = np.where(t < P["a"], t / max(P["a"], 1e-4), np.where(t < P["a"] + P["sus"], 1.0 + P["punch"] * (1 - (t - P["a"]) / max(P["sus"], 1e-4)), np.clip(1 - (t - P["a"] - P["sus"]) / max(P["dec"], 1e-4), 0, 1) ** 1.6))

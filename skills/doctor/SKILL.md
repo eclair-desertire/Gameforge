@@ -48,7 +48,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 
 **GIMP MCP**: `uvx gimp-mcp-plugin@<v> install-plugin` (сначала `--dry-run` — покажет папку), сервер с той же `<v>` (`claude mcp add --scope user gimp -- uvx gimp-mcp-plugin@<v>`), перезапуск GIMP → Tools → MCP → Start MCP Server. Не `@latest`: версии плагина и сервера разъедутся.
 
-**Музыка (gameforge-music, `--task music`)**: `brew install fluid-synth ffmpeg`; SoundFont **MuseScore_General.sf3** (MIT, 40 МБ): `curl -L -C - -o ~/.cache/gameforge/soundfonts/MuseScore_General.sf3 https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3` (+ рядом `MuseScore_General_License.md` из той же папки; размер 39 900 972 байт). Homebrew-ffmpeg собран без libvorbis — OGG пишется встроенным кодером (годится); лучше — `brew install vorbis-tools` (необязательно). Без всего этого работает только чиптюн в WAV — скажи об этом пользователю.
+**Музыка (gameforge-music, `--task music`)**: `brew install fluid-synth ffmpeg`; SoundFont **MuseScore_General.sf3** (MIT, 40 МБ): `curl -L -C - -o ~/.cache/gameforge/soundfonts/MuseScore_General.sf3 https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf3` (+ рядом `MuseScore_General_License.md` из той же папки; размер 39 900 972 байт). Homebrew-ffmpeg собран без libvorbis — OGG пишется встроенным кодером (годится); лучше — `brew install vorbis-tools` (необязательно). Без всего этого работают встроенный синтезатор и чиптюн (электроника, синтвейв, лоу-фай, ретро) в WAV, а оркестр/гитары/фортепиано заменяются синтезатором — скажи об этом пользователю.
 
 **Большие загрузки** всегда в фоне, с докачкой (`curl -C -`) и проверкой архива (`unzip -t`, хеш, если источник его публикует).
 
@@ -63,4 +63,4 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 4. Запиши в `.gameforge/context.md` → «Соглашения и команды»: какие инструменты и MCP настроены, версии, где лежат.
 
 ## 6. Если пользователь отказался
-Скажи, чем это грозит качеству, и предложи обходной путь: пиксель-арт без Aseprite — gameforge-fx + Python; HD 2D без GIMP — gameforge-fx; музыка без FluidSynth/SoundFont — чиптюн gameforge-music в WAV; 3D без Blender — gameforge-voxel или Blockbench. Не делай вид, что инструмент есть.
+Скажи, чем это грозит качеству, и предложи обходной путь: пиксель-арт без Aseprite — gameforge-fx + Python; HD 2D без GIMP — gameforge-fx; музыка без FluidSynth/SoundFont — встроенный синтезатор и чиптюн gameforge-music (оркестр звучит синтетически); 3D без Blender — gameforge-voxel или Blockbench. Не делай вид, что инструмент есть.

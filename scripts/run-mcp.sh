@@ -44,7 +44,8 @@ d = pathlib.Path(tempfile.mkdtemp())
 V.save_vox(sc, d / "c.vox"); V.export_mesh(sc, d / "c.glb")
 fr, meta = F.render_effect("hit", size=64); F.write_effect(fr, meta, d, "hit")
 sys.path.insert(0, str(root / "music")); import musiccore as MU, audio as AU
-song = MU.compose({"mood": "chiptune", "bars": 4, "seed": 1}); x, _ = AU.render(song, "chip"); AU.write_wav(d / "music.wav", x)
+song = MU.compose({"genre": "chiptune", "bars": 4, "seed": 1}); x, _ = AU.render(song, "chip"); AU.write_wav(d / "music.wav", x)
+song = MU.compose({"genre": "synthwave", "bars": 4, "seed": 1}); x, _ = AU.render(song, "synth"); AU.write_wav(d / "synth.wav", x)
 print("selftest ok:", sorted(p.name for p in d.iterdir()))
 PY
     ;;

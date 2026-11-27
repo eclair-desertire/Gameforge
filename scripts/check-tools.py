@@ -277,14 +277,14 @@ def c_flstudio(servers):
 
 
 def c_music(servers):
-    """gameforge-music: chip synth needs nothing; SoundFont render needs FluidSynth + a SoundFont; OGG/LUFS need ffmpeg."""
+    """gameforge-music: built-in synth/chip need nothing; live GM instruments need FluidSynth + a SoundFont; OGG/LUFS need ffmpeg."""
     c_builtin("music")
     fs = which("fluidsynth") or first("/opt/homebrew/bin/fluidsynth", "/usr/local/bin/fluidsynth")
-    add("music", "ok" if fs else "missing", f"FluidSynth — {fs}" if fs else "FluidSynth не установлен — без него только чиптюн-синтезатор",
+    add("music", "ok" if fs else "missing", f"FluidSynth — {fs}" if fs else "FluidSynth не установлен — оркестровые и акустические GM-инструменты заменятся встроенным синтезатором (электроника и чиптюн работают полностью)",
         "" if fs else "brew install fluid-synth")
     sf_dir = Path(os.path.expanduser(os.environ.get("GAMEFORGE_SOUNDFONTS", "~/.cache/gameforge/soundfonts")))
     sf = os.environ.get("GAMEFORGE_SOUNDFONT") or first(str(sf_dir / "*.sf3"), str(sf_dir / "*.sf2"))
-    add("music", "ok" if sf else "missing", f"SoundFont — {sf}" if sf else f"нет SoundFont в {sf_dir} — живые инструменты недоступны",
+    add("music", "ok" if sf else "missing", f"SoundFont — {sf}" if sf else f"нет SoundFont в {sf_dir} — живые инструменты (оркестр, гитары, фортепиано) заменятся синтезатором",
         "" if sf else "gameforge:doctor → music: MuseScore_General.sf3 (MIT, 40 МБ) в ~/.cache/gameforge/soundfonts")
     ff = which("ffmpeg")
     add("music", "ok" if ff else "missing", f"ffmpeg — {ff} (LUFS, OGG/MP3)" if ff else "ffmpeg не найден — без него только WAV и приблизительная громкость",
