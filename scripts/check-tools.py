@@ -288,7 +288,12 @@ def c_flstudio(servers):
             d = dev.group(1)
             folder = _re.search(r'Name="ScriptFolder"[^>]*?(?:/>|>([^<]*)<)', d)
             port = _re.search(r'Name="Port"[^>]*>([^<]*)<', d)
-            if not folder or not (folder.group(1) or "").strip():
+            fl_running = subprocess.run(["pgrep", "-x", "OsxFL"], capture_output=True).returncode == 0
+            doctor = str(HOME / "Tools/flstudio-mcp/.venv/bin/fl-studio-mcp") + " doctor"
+            if fl_running:  # FL writes reg.xml only on exit -> the file is stale while it runs
+                add("flstudio", "warn", "FL Studio открыт: его настройки MIDI в файле обновятся только после выхода — живой статус связи даёт doctor",
+                    f"{doctor}  (READY = связь есть; NO_HEARTBEAT = выбрать Controller type FLStudioMCP (user))")
+            elif not folder or not (folder.group(1) or "").strip():
                 add("flstudio", "config", "в MIDI Settings у входа FLStudioMCP не выбран Controller type — скрипт не загружен",
                     "FL Studio → Options → MIDI Settings → Input FLStudioMCP: Enable, Controller type = FLStudioMCP (user), Port N; Output FLStudioMCP: тот же Port N")
             else:
