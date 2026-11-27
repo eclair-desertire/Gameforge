@@ -32,13 +32,14 @@ TASKS = {
     "voxel": ["voxel"],
     "lowpoly": ["blockbench"],
     "blender": ["blender"],
+    "humans": ["blender", "mpfb"],
     "music": ["flstudio", "ffmpeg"],
     "audio": ["ffmpeg"],
     "unity": ["unity"],
     "godot": ["godot"],
     "unreal": ["unreal"],
 }
-ALL = ["git", "uv", "node", "ffmpeg", "voxel", "fx", "blender", "aseprite", "gimp", "blockbench", "flstudio", "unity", "godot", "unreal"]
+ALL = ["git", "uv", "node", "ffmpeg", "voxel", "fx", "blender", "mpfb", "aseprite", "gimp", "blockbench", "flstudio", "unity", "godot", "unreal"]
 
 
 def which(*names):
@@ -202,6 +203,31 @@ def c_blender(servers):
     add("blender", "ok" if on else "off", "сервер в Blender на :9876 " + ("отвечает" if on else "не отвечает (Blender закрыт или сервер не запущен)"), "" if on else start)
 
 
+def c_mpfb(servers):
+    """MPFB2 (MakeHuman for Blender) + CC0 system assets — needed for realistic humans."""
+    ext = first("~/Library/Application Support/Blender/*/extensions/*/mpfb/blender_manifest.toml")
+    if ext:
+        v = re_version(Path(ext).read_text(errors="ignore"))
+        add("mpfb", "ok", f"MPFB {v} — {Path(ext).parent}")
+    else:
+        add("mpfb", "missing", "MPFB2 (генератор людей для Blender) не установлен",
+            "gameforge:doctor → MPFB: Get Extensions «MPFB» или (если extensions.blender.org медленный) архив тега с github.com/makehumancommunity/mpfb2 → src/mpfb → package_install_files")
+    data = first("~/Library/Application Support/Blender/*/extensions/.user/*/mpfb/data")
+    skins = data and os.path.isdir(os.path.join(data, "skins")) and os.listdir(os.path.join(data, "skins"))
+    if skins:
+        add("mpfb", "ok", f"ассеты MakeHuman (CC0): {len(skins)} скинов, одежда/волосы/глаза — {data}")
+    else:
+        add("mpfb", "missing", "системные ассеты MakeHuman (кожа, глаза, волосы, одежда) не установлены",
+            "gameforge:doctor → MPFB: makehuman_system_assets_cc0.zip (280 МБ, зеркало files.makehumancommunity.org) → распаковать в user data MPFB")
+
+
+def re_version(txt):
+    for line in txt.splitlines():
+        if line.startswith("version"):
+            return line.split("=")[1].strip().strip('"')
+    return ""
+
+
 def c_aseprite(servers):
     app = first("/Applications/Aseprite.app", "~/Library/Application Support/Steam/steamapps/common/Aseprite/Aseprite.app") or which("aseprite")
     if app:
@@ -281,6 +307,7 @@ CHECKS = {
     "voxel": lambda s: c_builtin("voxel"),
     "fx": lambda s: c_builtin("fx"),
     "blender": c_blender,
+    "mpfb": lambda s: c_mpfb(s),
     "aseprite": c_aseprite,
     "gimp": c_gimp,
     "blockbench": c_blockbench,

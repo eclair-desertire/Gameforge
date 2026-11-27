@@ -1,7 +1,7 @@
 {
   "name": "gameforge",
   "displayName": "GameForge",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Личный полный цикл разработки игр: идея → концепт → GDD → прототип → продакшн → полировка → релиз → live. Unity (CLI + MCP), Godot, Unreal; арт: Blender, воксели (свой MCP gameforge-voxel), пиксель-арт (Aseprite), HD 2D (GIMP), Blockbench, VFX (свой MCP gameforge-fx); музыка в FL Studio; код, QA, левел-дизайн, звук, маркетинг; mobile и PC/Steam.",
   "author": {
     "name": "eclair"

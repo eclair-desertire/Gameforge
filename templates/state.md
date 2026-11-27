@@ -18,7 +18,7 @@ review: lean | full — строгость ворот ревью команды 
 
 ## Ворота этапов
 
-- [ ] setup — движок определён, CLI/MCP проверены, .gameforge/ создан
+- [ ] setup — движок определён, все инструменты из `tools:` установлены и проверены вызовом (check-tools: «всё готово») или отказ записан, .gameforge/ создан
 - [ ] concept — concept.md заполнен, вердикт «делаем» записан
 - [ ] design — gdd.md: core loop, 3 столпа, scope и cut list
 - [ ] prototype — играбельный core loop, плейтест, решение keep / kill / retune

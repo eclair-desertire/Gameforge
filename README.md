@@ -23,7 +23,8 @@ skills/
   plan/  build/          backlog по всем потокам; реализация с проверкой в движке
   playtest/              QA: автотесты, playmode/headless, отчёт, keep/kill
   level-design/          метрики, бит-чарт, greybox, проходимость и soft-lock
-  blender/               Blender MCP: реалистичные здания (киты), люди (MPFB2), экспорт
+  blender/               Blender MCP: реалистичные здания (киты), люди (MPFB2), экспорт;
+                         examples/street — рабочая сцена: дом XIX века, улица, два человека MPFB2
   voxel/                 воксели через gameforge-voxel: здания, люди, деревья, рельеф; Blockbench
   pixel-art/             пиксель-арт в Aseprite MCP: палитры, свет, sel-out, анимация, импорт
   art-2d/                HD 2D в GIMP MCP: спрайты, текстуры, UI, капсулы Steam

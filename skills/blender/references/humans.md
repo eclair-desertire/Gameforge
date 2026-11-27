@@ -14,6 +14,24 @@
 - **Лицензия:** core-ассеты (базовый меш, таргеты, скины) — **CC0**, модели можно использовать и продавать в закрытых коммерческих играх. **Сторонние ассеты из паков (одежда, волосы, скины) могут иметь другие лицензии** — проверяй каждый и пиши в credits.md. Код MPFB — GPL (это не касается созданных моделей).
 - MCP-интерфейса у MPFB нет, но он скриптуется из Python → управляем через `execute_blender_code`. Сначала **исследуй API в живом Blender** (найди модуль расширения в `bpy.context.preferences.addons.keys()` и его сервисы через `dir()`), а не угадывай имена функций. Есть ранний бета-мост makehumancommunity/mpfb-mcp — опционально.
 
+### Рабочий рецепт MPFB 2.0 через `execute_blender_code` (проверено на Blender 5.3)
+
+```python
+BASE = "bl_ext.user_default.mpfb"                       # имя модуля расширения
+HS = importlib.import_module(BASE + ".services.humanservice").HumanService
+LS = importlib.import_module(BASE + ".services.locationservice").LocationService
+DATA = LS.get_user_data()                               # тут лежат skins/, eyes/, hair/, clothes/…
+body = HS.create_human(macro_detail_dict=macro, feet_on_ground=True, scale=0.1)
+rig = HS.add_builtin_rig(body, "game_engine")           # 1) РИГ ДО ОДЕЖДЫ — иначе одежда не следует за позой
+HS.set_character_skin(<skins/…/*.mhmat>, body, skin_type="ENHANCED_SSS")
+HS.add_mhclo_asset(<eyes|eyebrows|eyelashes|teeth|tongue|hair|clothes/*.mhclo>, body, asset_type="Eyes"|…|"Clothes", subdiv_levels=1, material_type="MAKESKIN")
+```
+- `macro`: `gender` 0..1, `age` (0.5 = 25 лет, 1.0 = 90; лет → `0.5 + (лет-25)/65*0.5`), `muscle`, `weight`, `proportions`, `height`, `cupsize`, `firmness`, `race` {asian, caucasian, african}. Рост нелинеен по `height` и зависит от race — **измеряй** по вершинам вычисленного меша и подгоняй (мужчина 1.75–1.85, женщина 1.60–1.70).
+- Поза: в MPFB только T-pose. Вращай кости **в пространстве скелета**: `q = (M⁻¹ · R_armature · M)`, `M = bone.matrix_local`. Угол руки считай по `tail_local - head_local` (**`Bone.vector` — в пространстве родителя!**). Руки вниз ≈ 85–87° от горизонтали, локоть −8° вперёд, предплечье с поворотом ладонями к бёдрам, фаланги согнуть 10–30° — иначе «манекен».
+- Одежда ассет-пака: часть футболок с логотипом MakeHuman — для игры бери без логотипа или замени текстуру.
+- После каждого шага — рендер крупного плана (лицо, руки, ткань) с DOF, а не только общий план.
+- Готовая функция `person(...)` — `../examples/street/70_human.py`.
+
 ### Порядок
 
 1. **Паспорт персонажа**: роль, возраст, пол, телосложение, рост, происхождение, одежда, состояние (ухоженный/уставший/раненый), 3 отличительные черты. Без копирования реальных людей и чужих персонажей.

@@ -9,7 +9,7 @@ description: Проверяет, установлены ли и включены
 
 ## 1. Проверка (дёшево, ~1 с)
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task <pixel-art|art-2d|vfx|voxel|lowpoly|blender|music|audio|unity|godot|unreal>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" --task <pixel-art|art-2d|vfx|voxel|lowpoly|blender|humans|music|audio|unity|godot|unreal>
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" aseprite gimp      # конкретные инструменты
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # всё сразу
 ```
@@ -35,6 +35,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-tools.py" all               # вс�
 - Репозитории MCP клонируй в `~/Tools/<name>` (или куда скажет пользователь), не в проект игры.
 - Ничего не покупай, не логинься, не вводи ключи и пароли. Ключи API генераторов пользователь добавляет сам в env.
 - Скрипты установки сторонних проектов — сначала прочитай, что они делают.
+
+## 3a. Проверенные рецепты установки
+
+**MPFB2 + ассеты MakeHuman (реалистичные люди, `--task humans`)** — через `execute_blender_code` в живом Blender (нужен Allow Online Access):
+1. Каталог: `bpy.ops.extensions.repo_sync(repo_index=<extensions.blender.org>)` → `bpy.ops.extensions.package_install(repo_index=…, pkg_id="mpfb", enable_on_install=True)`. Установка асинхронная; если через ~30 с расширения нет в `extensions/*/mpfb` — сервер медленный (бывает ~5 КБ/с).
+2. Запасной путь: `https://codeload.github.com/makehumancommunity/mpfb2/zip/refs/tags/v<версия>` (официальный репозиторий) → запаковать содержимое `src/mpfb/` в zip → `bpy.ops.extensions.package_install_files(filepath=…, repo="user_default", enable_on_install=True)`.
+3. Ассеты (кожа, глаза, брови, волосы, одежда, обувь, CC0, 280 МБ): `https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip` (основное зеркало быстрое; `files2` — медленное) → `unzip -t` → распаковать в user data MPFB (`LocationService.get_user_data()`, обычно `~/Library/Application Support/Blender/<v>/extensions/.user/user_default/mpfb/data`).
+4. Проверка: `check-tools.py --task humans` → «всё готово».
+
+**Poly Haven (CC0 текстуры, HDRI)**: API отвечает 403 без заголовка User-Agent — ставь нейтральный (`-A "GameForge/1.0"`), без данных пользователя. Качай `curl -C - --retry 5` в фоне; файлы, загруженные в Blender недокачанными, потом `image.reload()`.
+
+**Большие загрузки** всегда в фоне, с докачкой (`curl -C -`) и проверкой архива (`unzip -t`, хеш, если источник его публикует).
 
 ## 4. Прописать MCP
 1. Шаблон `${CLAUDE_PLUGIN_ROOT}/mcp-templates/<tool>.json` → слить в `.mcp.json` **проекта игры** (не затирая чужие сервера), подставить `{{…}}`, ключ `_comment` не переносить. Инструменты, нужные во всех проектах, можно добавить на уровне пользователя: `claude mcp add --scope user …` — спроси, какой вариант.
